@@ -374,6 +374,9 @@
 				DEVELOPMENT_TEAM = 5CQ42G2N8X;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "拍照用于生成带水印的现场记录照片";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "定位用于写入经纬度、地址和海拔水印";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "保存带水印照片到系统相册";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -406,6 +409,9 @@
 				DEVELOPMENT_TEAM = 5CQ42G2N8X;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "拍照用于生成带水印的现场记录照片";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "定位用于写入经纬度、地址和海拔水印";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "保存带水印照片到系统相册";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
