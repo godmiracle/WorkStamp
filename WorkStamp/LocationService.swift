@@ -73,8 +73,10 @@ final class LocationService: NSObject, ObservableObject {
             defer { self.isGeocoding = false }
 
             if let error {
-                DispatchQueue.main.async {
-                    self.errorMessage = "地址解析失败：\(error.localizedDescription)"
+                if let message = self.userFacingGeocodeMessage(for: error) {
+                    DispatchQueue.main.async {
+                        self.errorMessage = message
+                    }
                 }
                 return
             }
@@ -164,6 +166,36 @@ final class LocationService: NSObject, ObservableObject {
             self.errorMessage = nil
         }
     }
+
+    private func userFacingLocationMessage(for error: Error) -> String? {
+        guard let clError = error as? CLError else {
+            return "定位失败：\(error.localizedDescription)"
+        }
+
+        switch clError.code {
+        case .locationUnknown:
+            return nil
+        case .denied:
+            return "没有定位权限，地址、经纬度和海拔水印将不可用。"
+        case .network:
+            return "定位网络不可用，当前位置可能不准确。"
+        default:
+            return "定位失败：\(clError.localizedDescription)"
+        }
+    }
+
+    private func userFacingGeocodeMessage(for error: Error) -> String? {
+        guard let clError = error as? CLError else {
+            return "地址解析失败：\(error.localizedDescription)"
+        }
+
+        switch clError.code {
+        case .geocodeCanceled, .geocodeFoundNoResult, .network, .locationUnknown:
+            return nil
+        default:
+            return "地址解析失败：\(clError.localizedDescription)"
+        }
+    }
 }
 
 extension LocationService: CLLocationManagerDelegate {
@@ -194,8 +226,12 @@ extension LocationService: CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        guard let message = userFacingLocationMessage(for: error) else {
+            return
+        }
+
         DispatchQueue.main.async {
-            self.errorMessage = "定位失败：\(error.localizedDescription)"
+            self.errorMessage = message
         }
     }
 }

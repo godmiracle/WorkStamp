@@ -2,7 +2,7 @@
 
 ## Project Name
 
-WorkStamp
+DayMark（印记相机）
 
 ## Current Goal
 
@@ -19,6 +19,13 @@ WorkStamp
 
 项目目标是提供一个足够简单、打开就能拍的现场记录工具，不追求复杂模板、美颜、滤镜或社交功能。核心价值是把“拍摄时间 + 位置 + 工作进度”稳定写入照片，便于工程、巡检、到场记录等场景留档。
 
+当前对外品牌名已确定为：
+
+- 中文：印记相机
+- 英文：DayMark
+
+工程目录和 bundle 仍保留历史命名 `WorkStamp`，后续是否统一到工程层名称，会在准备正式发布前再评估。
+
 ## Current Status
 
 ### Finished
@@ -26,16 +33,15 @@ WorkStamp
 - [x] 初始化 iOS SwiftUI 工程
 - [x] 明确 MVP 功能范围
 - [x] 建立首页 / 设置页基础信息架构
+- [x] 接入真机相机预览与拍照
+- [x] 接入定位、海拔、地址反查
+- [x] 接入水印绘制与保存相册
+- [x] 接入工作天数与中国法定节假日排除规则的首版实现（当前内置 2026 年年度表）
 
 ### In Progress
 
-- [ ] 接入真机相机预览与拍照
-- [ ] 接入定位、海拔、地址反查
-- [ ] 接入水印绘制与保存相册
-
-### Blocked
-
-- [ ] 中国法定节假日排除规则的数据来源与维护方式尚未最终确定
+- [ ] 补齐发布前文案、截图与隐私说明
+- [ ] 继续做真机回归和发布前边界验证
 
 ## Important Constraints
 
@@ -62,6 +68,7 @@ WorkStamp
 - 地址
 - 海拔
 - 工作第 N 天
+- 中国法定节假日排除
 
 ### Settings
 
@@ -78,7 +85,7 @@ WorkStamp
 
 | Path | Purpose |
 |---|---|
-| `WorkStamp/` | iOS App 源码 |
+| `WorkStamp/` | iOS App 源码（当前仍保留历史目录名） |
 | `WorkStampTests/` | 单元测试，优先覆盖工作日计算等纯逻辑 |
 | `WorkStampUITests/` | UI 测试，后续可补首页与设置流转 |
 | `docs/context.md` | 项目目标、范围、限制 |

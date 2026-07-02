@@ -15,6 +15,7 @@ final class CameraService: NSObject, ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var isCapturing = false
     @Published private(set) var activePosition: AVCaptureDevice.Position = .back
+    @Published private(set) var isFlashAvailable = false
     @Published var errorMessage: String?
 
     let session = AVCaptureSession()
@@ -44,7 +45,10 @@ final class CameraService: NSObject, ObservableObject {
         }
     }
 
-    func capturePhoto(completion: @escaping (Result<UIImage, Error>) -> Void) {
+    func capturePhoto(
+        flashMode: AVCaptureDevice.FlashMode = .off,
+        completion: @escaping (Result<UIImage, Error>) -> Void
+    ) {
         guard authorizationStatus == .authorized else {
             completion(.failure(CameraError.cameraPermissionDenied))
             return
@@ -57,7 +61,12 @@ final class CameraService: NSObject, ObservableObject {
 
         sessionQueue.async {
             let settings = AVCapturePhotoSettings()
-            settings.flashMode = .off
+            if self.photoOutput.supportedFlashModes.contains(flashMode),
+               self.isFlashAvailable {
+                settings.flashMode = flashMode
+            } else {
+                settings.flashMode = .off
+            }
             self.captureCompletion = completion
 
             DispatchQueue.main.async {
@@ -138,6 +147,7 @@ final class CameraService: NSObject, ObservableObject {
                 DispatchQueue.main.async {
                     self.isConfigured = true
                     self.activePosition = .back
+                    self.isFlashAvailable = input.device.hasFlash
                     self.errorMessage = nil
                 }
 
@@ -187,6 +197,7 @@ final class CameraService: NSObject, ObservableObject {
 
         DispatchQueue.main.async {
             self.activePosition = newPosition
+            self.isFlashAvailable = newInput.device.hasFlash
             self.errorMessage = nil
         }
     }

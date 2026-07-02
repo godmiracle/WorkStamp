@@ -17,6 +17,9 @@ struct SettingsView: View {
     @AppStorage(AppSettingKeys.watermarkFontSize) private var watermarkFontSize = 16.0
     @AppStorage(AppSettingKeys.onDutyMinutes) private var onDutyMinutes = AttendanceStatusResolver.defaultOnDutyMinutes
     @AppStorage(AppSettingKeys.offDutyMinutes) private var offDutyMinutes = AttendanceStatusResolver.defaultOffDutyMinutes
+    @AppStorage(AppSettingKeys.workdayTemplateName) private var workdayTemplateName = "Bench"
+    @AppStorage(AppSettingKeys.workdayPrefixMigrationVersion) private var workdayPrefixMigrationVersion = 0
+    @State private var showResetConfirmation = false
 
     private let holidayProvider = ChinaHolidayProvider()
 
@@ -67,7 +70,10 @@ struct SettingsView: View {
                         workdayCard
                         attendanceCard
                         watermarkCard
+                        holidayNoteCard
+#if DEBUG
                         deviceNoteCard
+#endif
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
@@ -84,12 +90,23 @@ struct SettingsView: View {
                     .fontWeight(.semibold)
                 }
             }
+            .task {
+                migrateWorkdayPrefixIfNeeded()
+            }
+            .alert("确认重置", isPresented: $showResetConfirmation) {
+                Button("取消", role: .cancel) {}
+                Button("重置为今天", role: .destructive) {
+                    workStartTimestamp = Date().timeIntervalSince1970
+                }
+            } message: {
+                Text("会把工作第一天重置为今天，之后的工作天数将从今天重新开始计算。")
+            }
         }
     }
 
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Bench 水印规则")
+            Text("工作天数设置")
                 .font(.system(size: 24, weight: .bold, design: .rounded))
 
             Text("这里控制工作天数、上下班判断和水印排版。首页只负责快速拍照，细节统一收在这里。")
@@ -103,19 +120,38 @@ struct SettingsView: View {
 
     private var workdayCard: some View {
         settingsCard(
-            title: "工作日规则",
-            subtitle: "第一天固定记为坐班 Bench 第1天，之后再按规则累计。"
+            title: "记录规则",
+            subtitle: "第一天固定记为\(workdayPhrase(dayNumber: 1))，之后再按规则累计。"
         ) {
             VStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("工作天数前缀")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+
+                    TextField("例如 坐班Bench、巡检、实习", text: $workdayTemplateName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                    settingPreviewCard(
+                        title: "实时预览",
+                        lines: [
+                            ("calendar", workdayPhrase(dayNumber: 12))
+                        ]
+                    )
+                }
+
                 DatePicker(
-                    "坐班Bench第1天",
+                    "\(workdayPhrase(dayNumber: 1))",
                     selection: workStartBinding,
                     displayedComponents: .date
                 )
                 .datePickerStyle(.compact)
 
                 Button("重置为今天") {
-                    workStartTimestamp = Date().timeIntervalSince1970
+                    showResetConfirmation = true
                 }
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .frame(maxWidth: .infinity)
@@ -123,19 +159,21 @@ struct SettingsView: View {
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 Toggle("排除周末", isOn: $excludeWeekends)
-                Toggle("排除中国节假日", isOn: $excludeChinaHolidays)
+                Toggle("排除中国法定节假日", isOn: $excludeChinaHolidays)
 
-                Text("规则说明：首次坐班 Bench 拍照日固定记为第1天，之后再按你的设置决定是否跳过周末和节假日。")
+                Text("规则说明：首次拍照日固定记为\(workdayPhrase(dayNumber: 1))，之后再按你的设置决定是否跳过周末和节假日。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-
-                if excludeChinaHolidays && !holidayProvider.supportsHolidayExclusion {
-                    Text("当前版本尚未内置节假日表，后续接入后该开关才会真正影响计算结果。")
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                }
             }
         }
+    }
+
+    private var workdayTemplateDisplayName: String {
+        WorkdayPrefixFormatter.displayPrefix(from: workdayTemplateName)
+    }
+
+    private func workdayPhrase(dayNumber: Int) -> String {
+        WorkdayPrefixFormatter.phrase(prefix: workdayTemplateName, dayNumber: dayNumber)
     }
 
     private var attendanceCard: some View {
@@ -176,12 +214,12 @@ struct SettingsView: View {
             subtitle: "控制预览和最终照片里文字块的位置与尺寸。"
         ) {
             VStack(spacing: 16) {
-                Picker("水印位置", selection: $watermarkPositionRawValue) {
-                    ForEach(WatermarkPosition.allCases) { position in
-                        Text(position.displayName).tag(position.rawValue)
-                    }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("水印位置")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+
+                    WatermarkPositionGrid(selection: $watermarkPositionRawValue)
                 }
-                .pickerStyle(.segmented)
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
@@ -195,9 +233,38 @@ struct SettingsView: View {
                         .tint(.orange)
                 }
 
+                settingPreviewCard(
+                    title: "字号实时预览",
+                    fontSize: watermarkFontSize,
+                    alignment: WatermarkPosition(rawValue: watermarkPositionRawValue) ?? .bottomLeft,
+                    lines: [
+                        ("clock", "2026-07-02 15:53:12"),
+                        ("calendar", workdayPhrase(dayNumber: 12))
+                    ]
+                )
+
                 HStack(spacing: 10) {
                     smallStatChip(title: "位置", value: WatermarkPosition(rawValue: watermarkPositionRawValue)?.displayName ?? "左下")
                     smallStatChip(title: "字号", value: "\(Int(watermarkFontSize))")
+                }
+            }
+        }
+    }
+
+    private var holidayNoteCard: some View {
+        settingsCard(
+            title: "节假日说明",
+            subtitle: "当前版本内置 2026 年中国法定节假日与调休规则。"
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                noteRow(text: "工作第一天始终固定记为第 1 天，不会被周末或节假日过滤掉。")
+
+                if holidayProvider.supportsHolidayExclusion {
+                    noteRow(text: "当前版本已写死 2026 年中国法定节假日放假日。")
+                    noteRow(text: "同时已加入 2026 年调休上班日，避免把需要上班的周末误排除。")
+                    noteRow(text: "后续年份需要跟随官方安排继续补本地规则。")
+                } else {
+                    noteRow(text: "“排除中国节假日”开关目前仅保留设置入口，正式节假日表后续接入后才会实际影响计算结果。")
                 }
             }
         }
@@ -267,6 +334,58 @@ struct SettingsView: View {
             Text(text)
                 .font(.system(size: 14, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private func migrateWorkdayPrefixIfNeeded() {
+        guard workdayPrefixMigrationVersion < WorkdayPrefixFormatter.currentMigrationVersion else {
+            return
+        }
+
+        workdayTemplateName = WorkdayPrefixFormatter.migratedPrefix(from: workdayTemplateName)
+        workdayPrefixMigrationVersion = WorkdayPrefixFormatter.currentMigrationVersion
+    }
+
+    private func settingPreviewCard(
+        title: String,
+        fontSize: Double = 16,
+        alignment: WatermarkPosition = .bottomLeft,
+        lines: [(String, String)]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+
+            ZStack(alignment: alignment.overlayAlignment) {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.11, green: 0.13, blue: 0.18),
+                                Color(red: 0.23, green: 0.27, blue: 0.33)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(height: 156)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: line.0)
+                                .font(.system(size: max(11, fontSize - 2), weight: .semibold))
+                            Text(line.1)
+                                .font(.system(size: fontSize, weight: .bold, design: .rounded))
+                        }
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+            }
         }
     }
 }

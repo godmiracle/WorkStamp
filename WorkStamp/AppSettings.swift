@@ -16,6 +16,36 @@ enum AppSettingKeys {
     static let watermarkFontSize = "watermarkFontSize"
     static let onDutyMinutes = "onDutyMinutes"
     static let offDutyMinutes = "offDutyMinutes"
+    static let workdayTemplateName = "workdayTemplateName"
+    static let workdayPrefixMigrationVersion = "workdayPrefixMigrationVersion"
+}
+
+enum WorkdayPrefixFormatter {
+    static let currentMigrationVersion = 1
+    static let defaultPrefix = "坐班Bench"
+
+    static func displayPrefix(from rawValue: String) -> String {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? defaultPrefix : trimmed
+    }
+
+    static func phrase(prefix: String, dayNumber: Int) -> String {
+        "\(displayPrefix(from: prefix))第\(dayNumber)天"
+    }
+
+    static func migratedPrefix(from legacyValue: String) -> String {
+        let trimmed = legacyValue.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmed.isEmpty else {
+            return defaultPrefix
+        }
+
+        if trimmed.hasPrefix("坐班") {
+            return trimmed
+        }
+
+        return "坐班\(trimmed)"
+    }
 }
 
 struct LocationSnapshot {
@@ -116,6 +146,54 @@ enum WatermarkPosition: String, CaseIterable, Identifiable {
         case .bottomRight:
             return .bottomTrailing
         }
+    }
+}
+
+struct WatermarkPositionGrid: View {
+    @Binding var selection: String
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 2)
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 10) {
+            ForEach(WatermarkPosition.allCases) { position in
+                Button {
+                    selection = position.rawValue
+                } label: {
+                    VStack(spacing: 8) {
+                        ZStack(alignment: position.overlayAlignment) {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color.white.opacity(isSelected(position) ? 0.18 : 0.08))
+                                .frame(height: 76)
+
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.white.opacity(0.92))
+                                .frame(width: 34, height: 22)
+                                .padding(10)
+                        }
+
+                        Text(position.displayName)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.primary)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.white.opacity(isSelected(position) ? 0.14 : 0.06))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(isSelected(position) ? Color.orange.opacity(0.85) : Color.white.opacity(0.10), lineWidth: isSelected(position) ? 1.5 : 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func isSelected(_ position: WatermarkPosition) -> Bool {
+        selection == position.rawValue
     }
 }
 

@@ -74,7 +74,55 @@ struct WorkStampTests {
             to: targetDate,
             options: WorkdayCalculationOptions(excludeWeekends: false, excludeChinaHolidays: true),
             calendar: calendar,
-            holidayProvider: StubHolidayProvider(holidayDates: [targetDate])
+            holidayProvider: StubHolidayProvider(holidayDates: [targetDate], adjustedWorkdays: [])
+        )
+
+        #expect(result == 2)
+    }
+
+    @Test func chinaHolidayProviderSkips2026SpringFestivalBreak() async throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let provider = ChinaHolidayProvider()
+        let startDate = date(2026, 2, 14)
+        let targetDate = date(2026, 2, 24)
+        let result = WorkdayCalculator.workdayNumber(
+            from: startDate,
+            to: targetDate,
+            options: WorkdayCalculationOptions(excludeWeekends: true, excludeChinaHolidays: true),
+            calendar: calendar,
+            holidayProvider: provider
+        )
+
+        #expect(result == 2)
+    }
+
+    @Test func chinaHolidayProviderTreatsAdjustedWeekendAsWorkday() async throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let provider = ChinaHolidayProvider()
+        let startDate = date(2026, 2, 27)
+        let targetDate = date(2026, 2, 28)
+        let result = WorkdayCalculator.workdayNumber(
+            from: startDate,
+            to: targetDate,
+            options: WorkdayCalculationOptions(excludeWeekends: true, excludeChinaHolidays: true),
+            calendar: calendar,
+            holidayProvider: provider
+        )
+
+        #expect(result == 2)
+    }
+
+    @Test func chinaHolidayProviderSkips2026NationalDayGoldenWeek() async throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let provider = ChinaHolidayProvider()
+        let startDate = date(2026, 9, 30)
+        let targetDate = date(2026, 10, 8)
+        let result = WorkdayCalculator.workdayNumber(
+            from: startDate,
+            to: targetDate,
+            options: WorkdayCalculationOptions(excludeWeekends: false, excludeChinaHolidays: true),
+            calendar: calendar,
+            holidayProvider: provider
         )
 
         #expect(result == 2)
@@ -126,10 +174,16 @@ struct WorkStampTests {
 
     private struct StubHolidayProvider: ChinaHolidayProviding {
         let holidayDates: [Date]
+        let adjustedWorkdays: [Date]
         let supportsHolidayExclusion = true
+        let supportedYears: [Int] = []
 
         func isHoliday(_ date: Date, calendar: Calendar) -> Bool {
             holidayDates.contains { calendar.isDate($0, inSameDayAs: date) }
+        }
+
+        func isAdjustedWorkday(_ date: Date, calendar: Calendar) -> Bool {
+            adjustedWorkdays.contains { calendar.isDate($0, inSameDayAs: date) }
         }
     }
 
