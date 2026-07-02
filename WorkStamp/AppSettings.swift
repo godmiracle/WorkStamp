@@ -79,6 +79,72 @@ struct LocationSnapshot {
         )
     }
 
+    var hasCoordinates: Bool {
+        latitude != nil && longitude != nil
+    }
+
+    var previewAddressText: String {
+        if let address, !address.isEmpty {
+            return address
+        }
+
+        return fallbackResolvedAddress ?? "定位中或不可用"
+    }
+
+    var detailAddressText: String {
+        if let address, !address.isEmpty {
+            return address
+        }
+
+        return fallbackResolvedAddress ?? "当前位置暂未获取到地址"
+    }
+
+    var watermarkAddressText: String {
+        if let address, !address.isEmpty {
+            return address
+        }
+
+        return fallbackWatermarkAddress ?? "定位中或不可用"
+    }
+
+    private var fallbackResolvedAddress: String? {
+        guard let coordinateText else {
+            return nil
+        }
+
+        switch quality {
+        case .stable:
+            return "当前位置附近（\(coordinateText)）"
+        case .approximate:
+            return "定位信号一般·当前位置附近（\(coordinateText)）"
+        case .searching:
+            return "定位信号较弱·当前位置附近（\(coordinateText)）"
+        }
+    }
+
+    private var fallbackWatermarkAddress: String? {
+        guard let coordinateText else {
+            return nil
+        }
+
+        switch quality {
+        case .stable:
+            return "当前位置附近（\(coordinateText)）"
+        case .approximate:
+            return "信号一般·\(coordinateText)附近"
+        case .searching:
+            return "信号较弱·\(coordinateText)附近"
+        }
+    }
+
+    private var coordinateText: String? {
+        guard let latitude, let longitude else {
+            return nil
+        }
+
+        return "\(latitude.workStampCoordinateString), \(longitude.workStampCoordinateString)"
+    }
+
     var quality: LocationQuality {
         guard let horizontalAccuracy, let timestamp else {
             return .searching

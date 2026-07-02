@@ -74,7 +74,7 @@ enum WatermarkRenderer {
             DateFormatter.workStampTimestamp.string(from: payload.timestamp),
             payload.attendanceStatus,
             coordinateLine(from: payload.snapshot),
-            "地址：\(payload.snapshot.address ?? "定位中或不可用")",
+            "地址：\(payload.snapshot.watermarkAddressText)",
             altitudeLine(from: payload.snapshot),
             payload.workdayLabel
         ]

@@ -36,6 +36,8 @@ DayMark（印记相机）项目文档导航。
   图标、截图、设计资源归档说明
 - [screenshots/README.md](./screenshots/README.md)
   真机截图与展示图整理说明
+- [site/README.md](./site/README.md)
+  可公开托管的支持页与隐私政策静态页面
 
 ## Collaboration
 

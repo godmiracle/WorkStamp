@@ -49,6 +49,9 @@
 - [ ] 更新日志确认
 - [ ] 首版 5 张截图准备完成
 - [ ] 截图文案与实际界面一致
+- [ ] 审核备注已准备完成
+- [ ] 支持链接已准备完成
+- [ ] 隐私政策链接已准备完成
 
 ### Build & Release
 
@@ -79,3 +82,36 @@
 已知问题：
 - ...
 ```
+
+## Ready To Submit Pack
+
+发布前至少准备好以下材料：
+
+- `docs/appstore.md`
+  - App 名称
+  - 副标题
+  - 关键词
+  - 描述
+  - 更新日志
+  - 审核备注
+- `docs/privacy.md`
+  - 公开隐私政策正文
+- `docs/site/`
+  - `support.html`
+  - `privacy.html`
+- 截图成品
+  - 建议 5 张 iPhone 截图
+- 两个链接
+  - Support URL
+  - Privacy Policy URL
+
+## Suggested Submission Order
+
+1. 先定版本号与 build
+2. 上传 Archive 到 App Store Connect
+3. 填写名称、副标题、关键词、描述、更新日志
+4. 上传截图
+5. 填写隐私问卷
+6. 填写审核备注
+7. 绑定隐私政策 URL 与支持链接
+8. 提交审核

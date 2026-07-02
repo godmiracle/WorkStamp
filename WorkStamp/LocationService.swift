@@ -8,6 +8,7 @@
 import Combine
 import CoreLocation
 import Foundation
+import MapKit
 
 final class LocationService: NSObject, ObservableObject {
     @Published private(set) var authorizationStatus: CLAuthorizationStatus
@@ -15,8 +16,10 @@ final class LocationService: NSObject, ObservableObject {
     @Published var errorMessage: String?
 
     private let locationManager = CLLocationManager()
-    private let geocoder = CLGeocoder()
+    private var reverseGeocodingRequest: MKReverseGeocodingRequest?
     private var lastGeocodedLocation: CLLocation?
+    private var lastResolvedAreaLocation: CLLocation?
+    private var lastResolvedAreaAddress: String?
     private var bestLocation: CLLocation?
     private var isGeocoding = false
 
@@ -60,17 +63,27 @@ final class LocationService: NSObject, ObservableObject {
             return
         }
 
-        guard location.horizontalAccuracy > 0, location.horizontalAccuracy <= 80 else {
+        guard location.horizontalAccuracy > 0, location.horizontalAccuracy <= 180 else {
             return
         }
 
-        if let lastGeocodedLocation, location.distance(from: lastGeocodedLocation) < 30, snapshot.address != nil {
+        if let lastGeocodedLocation, location.distance(from: lastGeocodedLocation) < 20, snapshot.address != nil {
             return
         }
 
         isGeocoding = true
-        geocoder.reverseGeocodeLocation(location) { placemarks, error in
+        reverseGeocodingRequest?.cancel()
+        guard let request = MKReverseGeocodingRequest(location: location) else {
+            isGeocoding = false
+            applyNearbyAreaFallback(for: location)
+            return
+        }
+        request.preferredLocale = Locale(identifier: "zh-Hans-CN")
+        reverseGeocodingRequest = request
+
+        request.getMapItems(completionHandler: { mapItems, error in
             defer { self.isGeocoding = false }
+            defer { self.reverseGeocodingRequest = nil }
 
             if let error {
                 if let message = self.userFacingGeocodeMessage(for: error) {
@@ -78,12 +91,24 @@ final class LocationService: NSObject, ObservableObject {
                         self.errorMessage = message
                     }
                 }
+
+                self.applyNearbyAreaFallback(for: location)
                 return
             }
 
             self.lastGeocodedLocation = location
-            let placemark = placemarks?.first
-            let address = self.formattedAddress(from: placemark)
+            let mapItem = mapItems?.first
+            let address = self.formattedAddress(from: mapItem)
+            let coarseAddress = self.coarseAreaAddress(from: mapItem)
+            let resolvedAddress = [address, coarseAddress].first { !$0.isEmpty }
+
+            if !coarseAddress.isEmpty {
+                self.lastResolvedAreaLocation = location
+                self.lastResolvedAreaAddress = coarseAddress
+            } else if let resolvedAddress, !resolvedAddress.isEmpty {
+                self.lastResolvedAreaLocation = location
+                self.lastResolvedAreaAddress = resolvedAddress
+            }
 
             DispatchQueue.main.async {
                 self.snapshot = LocationSnapshot(
@@ -92,47 +117,89 @@ final class LocationService: NSObject, ObservableObject {
                     altitude: self.snapshot.altitude,
                     horizontalAccuracy: self.snapshot.horizontalAccuracy,
                     timestamp: self.snapshot.timestamp,
-                    address: address.isEmpty ? nil : address
+                    address: resolvedAddress
                 )
             }
-        }
+        })
     }
 
-    private func formattedAddress(from placemark: CLPlacemark?) -> String {
-        guard let placemark else {
+    private func formattedAddress(from mapItem: MKMapItem?) -> String {
+        guard let mapItem else {
             return ""
         }
 
-        let primaryParts = [
-            placemark.areasOfInterest?.first,
-            placemark.name
-        ]
-        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
+        let primaryName = mapItem.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shortAddress = mapItem.address?.shortAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fullAddress = mapItem.address?.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        let singleLineAddress = mapItem.addressRepresentations?
+            .fullAddress(includingRegion: false, singleLine: true)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let areaParts = [
-            placemark.administrativeArea,
-            placemark.locality,
-            placemark.subLocality
-        ]
-        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
+        let preferredAddress = [shortAddress, singleLineAddress, fullAddress]
+            .compactMap { $0 }
+            .first { !$0.isEmpty }
 
-        let roadParts = [
-            placemark.thoroughfare,
-            placemark.subThoroughfare
-        ]
-        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
-
-        if let firstPrimary = primaryParts.first {
-            let suffix = (areaParts + roadParts)
-                .filter { !$0.contains(firstPrimary) }
-                .joined()
-            return suffix.isEmpty ? firstPrimary : "\(suffix)·\(firstPrimary)"
+        if let preferredAddress, let primaryName, !primaryName.isEmpty, !preferredAddress.contains(primaryName) {
+            return "\(preferredAddress)·\(primaryName)"
         }
 
-        return (areaParts + roadParts).joined()
+        if let preferredAddress, !preferredAddress.isEmpty {
+            return preferredAddress
+        }
+
+        return primaryName ?? ""
+    }
+
+    private func coarseAreaAddress(from mapItem: MKMapItem?) -> String {
+        guard let mapItem else {
+            return ""
+        }
+
+        let coarseArea = [
+            mapItem.addressRepresentations?.cityWithContext(.short),
+            mapItem.addressRepresentations?.cityName,
+            mapItem.addressRepresentations?.regionName,
+            mapItem.address?.shortAddress
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
+
+        guard let coarseArea, !coarseArea.isEmpty else {
+            return ""
+        }
+
+        if coarseArea.hasSuffix("附近") {
+            return coarseArea
+        }
+
+        return coarseArea + "附近"
+    }
+
+    private func applyNearbyAreaFallback(for location: CLLocation) {
+        guard let fallbackAddress = nearbyAreaFallback(for: location) else {
+            return
+        }
+
+        DispatchQueue.main.async {
+            self.snapshot = LocationSnapshot(
+                latitude: self.snapshot.latitude,
+                longitude: self.snapshot.longitude,
+                altitude: self.snapshot.altitude,
+                horizontalAccuracy: self.snapshot.horizontalAccuracy,
+                timestamp: self.snapshot.timestamp,
+                address: fallbackAddress
+            )
+        }
+    }
+
+    private func nearbyAreaFallback(for location: CLLocation) -> String? {
+        guard let lastResolvedAreaLocation,
+              let lastResolvedAreaAddress,
+              location.distance(from: lastResolvedAreaLocation) <= 500 else {
+            return nil
+        }
+
+        return lastResolvedAreaAddress
     }
 
     private func shouldPromote(_ newLocation: CLLocation, over currentLocation: CLLocation?) -> Bool {
@@ -154,6 +221,8 @@ final class LocationService: NSObject, ObservableObject {
     }
 
     private func updateSnapshot(with location: CLLocation) {
+        let fallbackAddress = nearbyAreaFallback(for: location)
+
         DispatchQueue.main.async {
             self.snapshot = LocationSnapshot(
                 latitude: location.coordinate.latitude,
@@ -161,7 +230,7 @@ final class LocationService: NSObject, ObservableObject {
                 altitude: location.verticalAccuracy >= 0 ? location.altitude : nil,
                 horizontalAccuracy: location.horizontalAccuracy,
                 timestamp: location.timestamp,
-                address: self.snapshot.address
+                address: fallbackAddress ?? self.snapshot.address
             )
             self.errorMessage = nil
         }
@@ -185,16 +254,13 @@ final class LocationService: NSObject, ObservableObject {
     }
 
     private func userFacingGeocodeMessage(for error: Error) -> String? {
-        guard let clError = error as? CLError else {
-            return "地址解析失败：\(error.localizedDescription)"
+        let nsError = error as NSError
+
+        if nsError.code == NSUserCancelledError {
+            return nil
         }
 
-        switch clError.code {
-        case .geocodeCanceled, .geocodeFoundNoResult, .network, .locationUnknown:
-            return nil
-        default:
-            return "地址解析失败：\(clError.localizedDescription)"
-        }
+        return nil
     }
 }
 

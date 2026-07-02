@@ -262,7 +262,7 @@ struct ContentView: View {
                 )
                 overlayRow(
                     title: "地点",
-                    value: locationService.snapshot.address ?? "定位中或不可用",
+                    value: locationService.snapshot.previewAddressText,
                     symbol: "mappin.and.ellipse"
                 )
                 overlayRow(
@@ -844,7 +844,7 @@ private struct QuickLocationPanel: View {
                     .background(Color(.secondarySystemBackground), in: Capsule())
                 }
 
-                locationRow(title: "地址", value: snapshot.address ?? "当前位置暂未解析出地址")
+                locationRow(title: "地址", value: snapshot.detailAddressText)
                 locationRow(title: "经纬度", value: coordinateValue)
                 locationRow(title: "海拔", value: altitudeValue)
                 locationRow(title: "精度", value: accuracyValue)

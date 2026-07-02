@@ -23,7 +23,7 @@ Local Settings + Local Watermark Rendering
 | `WorkdayCalculator` | 计算工作第 N 天 | 纯逻辑，优先单测覆盖 |
 | `AppSettings` | 设置键、展示枚举、默认值 | 基于 `@AppStorage` |
 | `CameraService` / `CameraPreviewView` | 相机预览、拍照输出 | 基于 `AVFoundation` 真机会话 |
-| `LocationService` | 经纬度、海拔、地址反查 | 基于 `CoreLocation` + `CLGeocoder` |
+| `LocationService` | 经纬度、海拔、地址反查 | 基于 `CoreLocation` + `MapKit` 反解析 |
 | `WatermarkRenderer` | 将文字绘制到拍摄图片 | 使用 UIKit 绘制后再保存 |
 | `PhotoLibrarySaver` | 写入系统相册 | 基于 `Photos` add-only 权限 |
 
@@ -54,7 +54,7 @@ Local Settings + Local Watermark Rendering
 | `SwiftUI` | 页面与状态管理 | 低 |
 | `AVFoundation` | 相机预览与拍照 | 真机权限与会话管理复杂度中等 |
 | `CoreLocation` | 经纬度、海拔 | 定位精度与授权状态存在波动 |
-| `Contacts / CLGeocoder` | 地址反查 | 地址解析速度和完整性不稳定 |
+| `MapKit` | 地址反查与模糊位置兜底 | 返回结果更贴近 Apple 地图生态，但仍受现场信号和地图数据影响 |
 | `Photos` | 保存带水印照片 | 需要相册写入权限 |
 
 ## Security & Privacy
