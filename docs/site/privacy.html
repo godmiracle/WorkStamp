@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>印记相机 隐私政策</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f7fb;
+      --card: rgba(255, 255, 255, 0.84);
+      --text: #101828;
+      --muted: #475467;
+      --accent: #2563eb;
+      --border: rgba(15, 23, 42, 0.08);
+      --shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #08101d;
+        --card: rgba(8, 15, 28, 0.82);
+        --text: #f8fafc;
+        --muted: #cbd5e1;
+        --accent: #8ab4ff;
+        --border: rgba(148, 163, 184, 0.18);
+        --shadow: 0 20px 40px rgba(2, 6, 23, 0.36);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.16), transparent 24%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 48px 20px 72px;
+    }
+    .card {
+      background: var(--card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      padding: 32px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 34px;
+      line-height: 1.12;
+    }
+    h2 {
+      margin: 28px 0 10px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+    p { margin: 0 0 12px; color: var(--muted); }
+    ul { margin: 0; padding-left: 20px; }
+    li { margin: 8px 0; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.12);
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+    .meta {
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <div class="badge">DayMark / 印记相机</div>
+      <h1>隐私政策</h1>
+      <p class="meta">生效日期：2026-07-02</p>
+
+      <p>印记相机（DayMark）重视你的隐私。本应用当前版本以本地处理为原则，不提供账号系统，也不会将你的照片、位置或工作记录上传到自建服务器。</p>
+
+      <h2>1. 我们会使用哪些权限</h2>
+      <p>相机权限：</p>
+      <ul>
+        <li>用于打开相机预览并拍摄照片。</li>
+      </ul>
+      <p>定位权限：</p>
+      <ul>
+        <li>用于获取经纬度、海拔、地点名称与地址。</li>
+        <li>用于把位置写入照片元数据，便于系统照片 App 显示地点标题与地图。</li>
+      </ul>
+      <p>相册权限：</p>
+      <ul>
+        <li>用于将带水印照片保存到系统相册。</li>
+      </ul>
+
+      <h2>2. 我们会处理哪些信息</h2>
+      <ul>
+        <li>拍摄时间</li>
+        <li>地理位置</li>
+        <li>海拔</li>
+        <li>地址 / 地点名称</li>
+        <li>用户设置项</li>
+        <li>带水印照片</li>
+      </ul>
+
+      <h2>3. 信息如何存储</h2>
+      <ul>
+        <li>设置项保存在你的设备本地。</li>
+        <li>照片保存到你的系统相册。</li>
+        <li>当前版本不建立远端用户档案。</li>
+        <li>当前版本不上传照片、地点、位置或工作天数信息到自建服务器。</li>
+      </ul>
+
+      <h2>4. 权限拒绝后的影响</h2>
+      <ul>
+        <li>拒绝相机权限后，应用无法拍照。</li>
+        <li>拒绝定位权限后，应用仍可拍照，但地点、经纬度、海拔和位置元数据会缺失。</li>
+        <li>拒绝相册权限后，应用无法将照片保存到系统相册。</li>
+      </ul>
+
+      <h2>5. 照片分享提醒</h2>
+      <p>带水印照片可能直接包含时间、地点、经纬度和海拔信息；如果你分享这些照片，相关信息也可能一并被他人看到。</p>
+
+      <h2>6. 第三方共享与追踪</h2>
+      <ul>
+        <li>当前版本不接入第三方广告 SDK。</li>
+        <li>当前版本不进行跨 App 或跨网站追踪。</li>
+        <li>当前版本不向第三方出售你的个人信息。</li>
+      </ul>
+
+      <h2>7. 联系方式</h2>
+      <p>如对隐私政策有疑问，请联系开发者：</p>
+      <p><a href="mailto:replace-with-your-real-email@example.com">luckytezuka@gmail.com</a></p>
+
+      <h2>8. 更新</h2>
+      <p>如果未来版本引入 iCloud、WeatherKit、快捷指令、AI 地点识别或任何远端服务，本隐私政策会同步更新。</p>
+    </section>
+  </main>
+</body>
+</html>
