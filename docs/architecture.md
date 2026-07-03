@@ -23,7 +23,7 @@ Local Settings + Local Watermark Rendering
 | `WorkdayCalculator` | 计算工作第 N 天 | 纯逻辑，优先单测覆盖 |
 | `AppSettings` | 设置键、展示枚举、默认值 | 基于 `@AppStorage` |
 | `CameraService` / `CameraPreviewView` | 相机预览、拍照输出 | 基于 `AVFoundation` 真机会话 |
-| `LocationService` | 经纬度、海拔、地址反查 | 基于 `CoreLocation` + `MapKit` 反解析 |
+| `LocationService` | 经纬度、海拔、地址反查 | 基于 `CoreLocation` + `CLGeocoder` 保底 + `MapKit` POI 补强 |
 | `WatermarkRenderer` | 将文字绘制到拍摄图片 | 使用 UIKit 绘制后再保存 |
 | `PhotoLibrarySaver` | 写入系统相册 | 基于 `Photos` add-only 权限 |
 
@@ -54,7 +54,8 @@ Local Settings + Local Watermark Rendering
 | `SwiftUI` | 页面与状态管理 | 低 |
 | `AVFoundation` | 相机预览与拍照 | 真机权限与会话管理复杂度中等 |
 | `CoreLocation` | 经纬度、海拔 | 定位精度与授权状态存在波动 |
-| `MapKit` | 地址反查与模糊位置兜底 | 返回结果更贴近 Apple 地图生态，但仍受现场信号和地图数据影响 |
+| `MapKit` | POI 补强与附近兴趣点检索 | 有机会命中园区、商场、地铁站等地点名，但结果受 Apple 地图数据影响 |
+| `CoreLocation Geocoder` | 基础地址保底 | 在中国场景下更容易先给出一个可读地址，但新 SDK 已出现弃用警告 |
 | `Photos` | 保存带水印照片 | 需要相册写入权限 |
 
 ## Security & Privacy

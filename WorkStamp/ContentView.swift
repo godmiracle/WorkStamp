@@ -113,7 +113,8 @@ struct ContentView: View {
                 QuickLocationPanel(
                     snapshot: locationService.snapshot,
                     qualityTitle: locationQualityTitle,
-                    qualityTint: locationQualityTint
+                    qualityTint: locationQualityTint,
+                    isRefreshing: locationService.isRefreshing
                 ) {
                     locationService.refreshOneShot()
                 }
@@ -820,6 +821,7 @@ private struct QuickLocationPanel: View {
     let snapshot: LocationSnapshot
     let qualityTitle: String
     let qualityTint: Color
+    let isRefreshing: Bool
     let onRefresh: () -> Void
 
     var body: some View {
@@ -853,8 +855,14 @@ private struct QuickLocationPanel: View {
                     onRefresh()
                 } label: {
                     HStack {
-                        Image(systemName: "location.fill")
-                        Text("重新定位")
+                        if isRefreshing {
+                            ProgressView()
+                                .tint(.orange)
+                        } else {
+                            Image(systemName: "location.fill")
+                        }
+
+                        Text(isRefreshing ? "定位刷新中" : "重新定位")
                             .fontWeight(.semibold)
                     }
                     .frame(maxWidth: .infinity)
@@ -862,6 +870,7 @@ private struct QuickLocationPanel: View {
                     .background(Color.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .disabled(isRefreshing)
 
                 Text("点这里的意义，是在拍照前快速确认当前位置和定位精度，不用等拍完再去照片详情页里查。")
                     .font(.footnote)

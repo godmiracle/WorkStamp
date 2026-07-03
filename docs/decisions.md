@@ -327,6 +327,35 @@
 
 ---
 
+## 2026-07-03 - Reintroduce CLGeocoder As The Base Address Layer While Keeping MapKit POI Enrichment
+
+### Decision
+
+在 `LocationService` 中恢复 `CLGeocoder` 作为第一层基础地址解析，同时保留 `MapKit` 的反解析和附近 POI 检索作为第二层补强；最终策略改为“先保证有一个可读地址，再争取更像园区/商场/写字楼的地点名”。
+
+### Reason
+
+真机体感表明，纯 `MapKit` 方案在当前中国场景里更容易退化成道路、门牌号或过于泛化的结果；而 `CLGeocoder` 虽然在新 SDK 下有弃用警告，但更容易先返回一个用户能接受的基础地址，更符合水印相机“拍完马上能看地点”的产品预期。
+
+### Alternatives Considered
+
+- 继续只用 `MapKit`：方向更顺着新 SDK，但当前地址体感不够稳定。
+- 完全回退到 `CLGeocoder`：基础地址更稳，但会丢掉 `MapKit` 对园区、商场、地铁站等 POI 的补强机会。
+- 接入第三方中国地图 SDK：潜在效果更好，但当前会引入成本、合规和依赖复杂度。
+
+### Impact
+
+- 地址链路现在是双轨：`CLGeocoder` 负责保底，`MapKit` 只在更优时覆盖。
+- 真机弱信号或 POI 稀疏场景下，更容易看到一个可读地址，而不是直接退到坐标。
+- 工程会暂时保留 `CLGeocoder` 的弃用警告，这是当前为体验做的有意识取舍。
+
+### Follow-up
+
+- 真机重点验证园区、商场、写字楼、地铁口四类场景的地址展示是否比纯 `MapKit` 更稳定。
+- 如果后续 Apple 地图数据继续不满足中国场景，再评估是否需要可选第三方数据源。
+
+---
+
 ## 2026-07-01 - Align Preview Watermark With Final Photo Output
 
 ### Decision

@@ -13,15 +13,19 @@ import MapKit
 final class LocationService: NSObject, ObservableObject {
     @Published private(set) var authorizationStatus: CLAuthorizationStatus
     @Published private(set) var snapshot = LocationSnapshot.empty
+    @Published private(set) var isRefreshing = false
     @Published var errorMessage: String?
 
     private let locationManager = CLLocationManager()
+    private let geocoder = CLGeocoder()
     private var reverseGeocodingRequest: MKReverseGeocodingRequest?
+    private var nearbyPOISearch: MKLocalSearch?
     private var lastGeocodedLocation: CLLocation?
     private var lastResolvedAreaLocation: CLLocation?
     private var lastResolvedAreaAddress: String?
     private var bestLocation: CLLocation?
     private var isGeocoding = false
+    private let poiSearchMaximumRadius: CLLocationDistance = 1500
 
     override init() {
         authorizationStatus = locationManager.authorizationStatus
@@ -46,10 +50,19 @@ final class LocationService: NSObject, ObservableObject {
     func refreshOneShot() {
         switch authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
+            DispatchQueue.main.async {
+                self.isRefreshing = true
+            }
             locationManager.requestLocation()
         case .notDetermined:
+            DispatchQueue.main.async {
+                self.isRefreshing = true
+            }
             locationManager.requestWhenInUseAuthorization()
         default:
+            DispatchQueue.main.async {
+                self.isRefreshing = false
+            }
             break
         }
     }
@@ -72,55 +85,72 @@ final class LocationService: NSObject, ObservableObject {
         }
 
         isGeocoding = true
+        geocoder.cancelGeocode()
         reverseGeocodingRequest?.cancel()
-        guard let request = MKReverseGeocodingRequest(location: location) else {
-            isGeocoding = false
-            applyNearbyAreaFallback(for: location)
-            return
-        }
-        request.preferredLocale = Locale(identifier: "zh-Hans-CN")
-        reverseGeocodingRequest = request
-
-        request.getMapItems(completionHandler: { mapItems, error in
-            defer { self.isGeocoding = false }
-            defer { self.reverseGeocodingRequest = nil }
-
-            if let error {
-                if let message = self.userFacingGeocodeMessage(for: error) {
-                    DispatchQueue.main.async {
-                        self.errorMessage = message
-                    }
+        nearbyPOISearch?.cancel()
+        geocoder.reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "zh-Hans-CN")) { placemarks, error in
+            if let error,
+               let message = self.userFacingGeocodeMessage(for: error) {
+                DispatchQueue.main.async {
+                    self.errorMessage = message
                 }
-
-                self.applyNearbyAreaFallback(for: location)
-                return
             }
 
             self.lastGeocodedLocation = location
-            let mapItem = mapItems?.first
-            let address = self.formattedAddress(from: mapItem)
-            let coarseAddress = self.coarseAreaAddress(from: mapItem)
-            let resolvedAddress = [address, coarseAddress].first { !$0.isEmpty }
 
-            if !coarseAddress.isEmpty {
+            let baseAddress = self.formattedAddress(from: placemarks?.first)
+            let fallbackAddress = baseAddress.isEmpty ? self.nearbyAreaFallback(for: location) : baseAddress
+
+            if let fallbackAddress, !fallbackAddress.isEmpty {
                 self.lastResolvedAreaLocation = location
-                self.lastResolvedAreaAddress = coarseAddress
-            } else if let resolvedAddress, !resolvedAddress.isEmpty {
-                self.lastResolvedAreaLocation = location
-                self.lastResolvedAreaAddress = resolvedAddress
+                self.lastResolvedAreaAddress = fallbackAddress
             }
 
-            DispatchQueue.main.async {
-                self.snapshot = LocationSnapshot(
-                    latitude: self.snapshot.latitude,
-                    longitude: self.snapshot.longitude,
-                    altitude: self.snapshot.altitude,
-                    horizontalAccuracy: self.snapshot.horizontalAccuracy,
-                    timestamp: self.snapshot.timestamp,
-                    address: resolvedAddress
-                )
-            }
-        })
+            self.updateAddress(fallbackAddress)
+            self.enrichAddressWithMapKit(for: location, fallbackAddress: fallbackAddress)
+        }
+    }
+
+    private func poiBackedAddress(from mapItem: MKMapItem?) -> String? {
+        let address = formattedAddress(from: mapItem)
+        return address.isEmpty ? nil : address
+    }
+
+    private func formattedAddress(from placemark: CLPlacemark?) -> String {
+        guard let placemark else {
+            return ""
+        }
+
+        let primaryParts = [
+            placemark.areasOfInterest?.first,
+            placemark.name
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+
+        let areaParts = [
+            placemark.administrativeArea,
+            placemark.locality,
+            placemark.subLocality
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+
+        let roadParts = [
+            placemark.thoroughfare,
+            placemark.subThoroughfare
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+
+        if let firstPrimary = primaryParts.first {
+            let suffix = (areaParts + roadParts)
+                .filter { !$0.contains(firstPrimary) }
+                .joined()
+            return suffix.isEmpty ? firstPrimary : "\(suffix)·\(firstPrimary)"
+        }
+
+        return (areaParts + roadParts).joined()
     }
 
     private func formattedAddress(from mapItem: MKMapItem?) -> String {
@@ -128,51 +158,128 @@ final class LocationService: NSObject, ObservableObject {
             return ""
         }
 
-        let primaryName = mapItem.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let primaryName = preferredPOIName(from: mapItem)
         let shortAddress = mapItem.address?.shortAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
         let fullAddress = mapItem.address?.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         let singleLineAddress = mapItem.addressRepresentations?
             .fullAddress(includingRegion: false, singleLine: true)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let preferredAddress = [shortAddress, singleLineAddress, fullAddress]
+        let preferredAddress = [singleLineAddress, fullAddress, shortAddress]
             .compactMap { $0 }
             .first { !$0.isEmpty }
 
-        if let preferredAddress, let primaryName, !primaryName.isEmpty, !preferredAddress.contains(primaryName) {
-            return "\(preferredAddress)·\(primaryName)"
+        guard let primaryName, !primaryName.isEmpty else {
+            return ""
         }
 
-        if let preferredAddress, !preferredAddress.isEmpty {
-            return preferredAddress
+        if let preferredAddress, !preferredAddress.contains(primaryName) {
+            return "\(primaryName)·\(preferredAddress)"
         }
 
-        return primaryName ?? ""
+        return primaryName
     }
 
-    private func coarseAreaAddress(from mapItem: MKMapItem?) -> String {
-        guard let mapItem else {
-            return ""
+    private func enrichAddressWithMapKit(for location: CLLocation, fallbackAddress: String?) {
+        guard let request = MKReverseGeocodingRequest(location: location) else {
+            finishGeocoding(for: location, resolvedAddress: fallbackAddress)
+            return
         }
 
-        let coarseArea = [
-            mapItem.addressRepresentations?.cityWithContext(.short),
-            mapItem.addressRepresentations?.cityName,
-            mapItem.addressRepresentations?.regionName,
-            mapItem.address?.shortAddress
-        ]
-        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .first { !$0.isEmpty }
+        request.preferredLocale = Locale(identifier: "zh-Hans-CN")
+        reverseGeocodingRequest = request
 
-        guard let coarseArea, !coarseArea.isEmpty else {
-            return ""
+        request.getMapItems(completionHandler: { mapItems, error in
+            defer { self.reverseGeocodingRequest = nil }
+
+            if let error,
+               let message = self.userFacingGeocodeMessage(for: error) {
+                DispatchQueue.main.async {
+                    self.errorMessage = message
+                }
+            }
+
+            let mapItem = self.bestMapItem(from: mapItems ?? [], anchor: location)
+            let mapKitAddress = self.poiBackedAddress(from: mapItem)
+            let resolvedAddress = self.preferredResolvedAddress(mapKitAddress, fallbackAddress: fallbackAddress)
+
+            if let resolvedAddress, !resolvedAddress.isEmpty {
+                self.lastResolvedAreaLocation = location
+                self.lastResolvedAreaAddress = resolvedAddress
+            }
+
+            self.updateAddress(resolvedAddress)
+
+            if self.shouldSearchNearbyPOI(for: mapItem, resolvedAddress: resolvedAddress) {
+                self.searchNearbyPOI(for: location, fallbackAddress: resolvedAddress ?? fallbackAddress)
+            } else {
+                self.finishGeocoding(for: location, resolvedAddress: resolvedAddress ?? fallbackAddress)
+            }
+        })
+    }
+
+    private func preferredResolvedAddress(_ mapKitAddress: String?, fallbackAddress: String?) -> String? {
+        let trimmedMapKitAddress = mapKitAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedFallback = fallbackAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let trimmedMapKitAddress, !trimmedMapKitAddress.isEmpty else {
+            return trimmedFallback
         }
 
-        if coarseArea.hasSuffix("附近") {
-            return coarseArea
+        guard let trimmedFallback, !trimmedFallback.isEmpty else {
+            return trimmedMapKitAddress
         }
 
-        return coarseArea + "附近"
+        let mapKitLooksLikePOI = looksLikePointOfInterestCandidate(trimmedMapKitAddress)
+        let fallbackLooksLikePOI = looksLikePointOfInterestCandidate(trimmedFallback)
+
+        if mapKitLooksLikePOI && !fallbackLooksLikePOI {
+            return trimmedMapKitAddress
+        }
+
+        if mapKitLooksLikePOI == fallbackLooksLikePOI,
+           trimmedMapKitAddress.count > trimmedFallback.count,
+           !looksLikeStreetAddress(trimmedMapKitAddress) {
+            return trimmedMapKitAddress
+        }
+
+        return trimmedFallback
+    }
+
+    private func looksLikePointOfInterestCandidate(_ value: String) -> Bool {
+        if value.hasSuffix("附近") {
+            return false
+        }
+
+        if value.contains("·") {
+            return true
+        }
+
+        return looksLikePointOfInterestName(value)
+    }
+
+    private func updateAddress(_ address: String?) {
+        let trimmedAddress = address?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        DispatchQueue.main.async {
+            self.snapshot = LocationSnapshot(
+                latitude: self.snapshot.latitude,
+                longitude: self.snapshot.longitude,
+                altitude: self.snapshot.altitude,
+                horizontalAccuracy: self.snapshot.horizontalAccuracy,
+                timestamp: self.snapshot.timestamp,
+                address: trimmedAddress?.isEmpty == false ? trimmedAddress : nil
+            )
+        }
+    }
+
+    private func finishGeocoding(for location: CLLocation, resolvedAddress: String?) {
+        if let resolvedAddress, !resolvedAddress.isEmpty {
+            lastResolvedAreaLocation = location
+            lastResolvedAreaAddress = resolvedAddress
+        }
+
+        isGeocoding = false
     }
 
     private func applyNearbyAreaFallback(for location: CLLocation) {
@@ -200,6 +307,237 @@ final class LocationService: NSObject, ObservableObject {
         }
 
         return lastResolvedAreaAddress
+    }
+
+    private func preferredPOIName(from mapItem: MKMapItem?) -> String? {
+        guard let mapItem,
+              let rawName = mapItem.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawName.isEmpty else {
+            return nil
+        }
+
+        let addressCandidates = [
+            mapItem.address?.shortAddress,
+            mapItem.address?.fullAddress,
+            mapItem.addressRepresentations?.fullAddress(includingRegion: false, singleLine: true)
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+
+        let hasPOICategory = mapItem.pointOfInterestCategory != nil
+
+        if hasPOICategory {
+            return rawName
+        }
+
+        if addressCandidates.contains(where: { $0 == rawName || $0.contains(rawName) || rawName.contains($0) }) {
+            return nil
+        }
+
+        if looksLikePointOfInterestName(rawName) {
+            return rawName
+        }
+
+        return nil
+    }
+
+    private func looksLikePointOfInterestName(_ value: String) -> Bool {
+        let poiMarkers = [
+            "园区", "科技园", "产业园", "创意园", "广场", "中心", "商场", "商城",
+            "大厦", "写字楼", "公园", "地铁站", "车站", "机场", "酒店", "医院",
+            "学校", "大学", "园", "城"
+        ]
+
+        if poiMarkers.contains(where: { value.contains($0) }) {
+            return true
+        }
+
+        return !looksLikeStreetAddress(value)
+    }
+
+    private func looksLikeStreetAddress(_ value: String) -> Bool {
+        let addressMarkers = ["路", "街", "道", "巷", "弄", "号", "室", "栋", "楼"]
+        let hasDigits = value.rangeOfCharacter(from: .decimalDigits) != nil
+
+        if hasDigits && addressMarkers.contains(where: { value.contains($0) }) {
+            return true
+        }
+
+        return false
+    }
+
+    private func shouldSearchNearbyPOI(for mapItem: MKMapItem?, resolvedAddress: String?) -> Bool {
+        guard let resolvedAddress, !resolvedAddress.isEmpty else {
+            return true
+        }
+
+        if preferredPOIName(from: mapItem) != nil {
+            return false
+        }
+
+        if resolvedAddress.hasSuffix("附近") {
+            return true
+        }
+
+        return looksLikeStreetAddress(resolvedAddress)
+    }
+
+    private func searchNearbyPOI(
+        for location: CLLocation,
+        fallbackAddress: String?,
+        radius: CLLocationDistance? = nil
+    ) {
+        let radius = radius ?? min(max(location.horizontalAccuracy * 4, 180), 600)
+        let request = MKLocalPointsOfInterestRequest(center: location.coordinate, radius: radius)
+        let search = MKLocalSearch(request: request)
+        nearbyPOISearch = search
+
+        search.start(completionHandler: { response, error in
+            guard self.nearbyPOISearch === search else {
+                return
+            }
+            self.nearbyPOISearch = nil
+
+            guard error == nil, let response else {
+                self.finishGeocoding(for: location, resolvedAddress: fallbackAddress)
+                return
+            }
+
+            let nearbyItem = self.bestMapItem(from: response.mapItems, anchor: location)
+
+            guard let nearbyItem,
+                  let poiName = self.preferredPOIName(from: nearbyItem) else {
+                let didRetry = self.retryNearbyPOISearchIfNeeded(
+                    for: location,
+                    fallbackAddress: fallbackAddress,
+                    currentRadius: radius
+                )
+                if !didRetry {
+                    self.finishGeocoding(for: location, resolvedAddress: fallbackAddress)
+                }
+                return
+            }
+
+            let enrichedAddress = self.composeEnrichedAddress(
+                poiName: poiName,
+                fallbackAddress: fallbackAddress,
+                poiAddress: self.formattedAddress(from: nearbyItem)
+            )
+
+            guard !enrichedAddress.isEmpty else {
+                self.finishGeocoding(for: location, resolvedAddress: fallbackAddress)
+                return
+            }
+
+            DispatchQueue.main.async {
+                self.snapshot = LocationSnapshot(
+                    latitude: self.snapshot.latitude,
+                    longitude: self.snapshot.longitude,
+                    altitude: self.snapshot.altitude,
+                    horizontalAccuracy: self.snapshot.horizontalAccuracy,
+                    timestamp: self.snapshot.timestamp,
+                    address: enrichedAddress
+                )
+            }
+            self.finishGeocoding(for: location, resolvedAddress: enrichedAddress)
+        })
+    }
+
+    private func retryNearbyPOISearchIfNeeded(
+        for location: CLLocation,
+        fallbackAddress: String?,
+        currentRadius: CLLocationDistance
+    ) -> Bool {
+        let expandedRadius = min(max(currentRadius * 2, 900), poiSearchMaximumRadius)
+
+        guard expandedRadius > currentRadius else {
+            return false
+        }
+
+        searchNearbyPOI(
+            for: location,
+            fallbackAddress: fallbackAddress,
+            radius: expandedRadius
+        )
+        return true
+    }
+
+    private func composeEnrichedAddress(poiName: String, fallbackAddress: String?, poiAddress: String) -> String {
+        let trimmedFallback = fallbackAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPOIAddress = poiAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let trimmedFallback,
+           !trimmedFallback.isEmpty,
+           !trimmedFallback.contains(poiName) {
+            return "\(poiName)·\(trimmedFallback)"
+        }
+
+        if !trimmedPOIAddress.isEmpty, !trimmedPOIAddress.contains(poiName) {
+            return "\(poiName)·\(trimmedPOIAddress)"
+        }
+
+        return poiName
+    }
+
+    private func bestMapItem(from items: [MKMapItem], anchor location: CLLocation) -> MKMapItem? {
+        items
+            .compactMap { item -> (item: MKMapItem, score: Int)? in
+                guard let poiName = preferredPOIName(from: item), !poiName.isEmpty else {
+                    return nil
+                }
+
+                return (item, scoreForMapItem(item, poiName: poiName, anchor: location))
+            }
+            .sorted { lhs, rhs in
+                if lhs.score == rhs.score {
+                    return lhs.item.location.distance(from: location) < rhs.item.location.distance(from: location)
+                }
+
+                return lhs.score > rhs.score
+            }
+            .first?
+            .item
+    }
+
+    private func scoreForMapItem(_ item: MKMapItem, poiName: String, anchor location: CLLocation) -> Int {
+        let distance = item.location.distance(from: location)
+        var score = 0
+
+        if item.pointOfInterestCategory != nil {
+            score += 120
+        }
+
+        if looksLikeStrongPointOfInterestName(poiName) {
+            score += 55
+        } else {
+            score += 25
+        }
+
+        if distance <= 40 {
+            score += 35
+        } else if distance <= 100 {
+            score += 28
+        } else if distance <= 220 {
+            score += 20
+        } else if distance <= 450 {
+            score += 10
+        }
+
+        if let address = item.address?.shortAddress,
+           looksLikeStreetAddress(address) {
+            score -= 8
+        }
+
+        return score
+    }
+
+    private func looksLikeStrongPointOfInterestName(_ value: String) -> Bool {
+        let strongMarkers = [
+            "产业园", "科技园", "创意园", "工业园", "软件园", "广场", "商场", "商城",
+            "中心", "大厦", "写字楼", "地铁站", "园区", "公司", "园", "城"
+        ]
+
+        return strongMarkers.contains(where: { value.contains($0) })
     }
 
     private func shouldPromote(_ newLocation: CLLocation, over currentLocation: CLLocation?) -> Bool {
@@ -254,6 +592,15 @@ final class LocationService: NSObject, ObservableObject {
     }
 
     private func userFacingGeocodeMessage(for error: Error) -> String? {
+        if let clError = error as? CLError {
+            switch clError.code {
+            case .geocodeCanceled, .geocodeFoundNoResult, .network, .locationUnknown:
+                return nil
+            default:
+                return "地址解析失败：\(clError.localizedDescription)"
+            }
+        }
+
         let nsError = error as NSError
 
         if nsError.code == NSUserCancelledError {
@@ -283,15 +630,26 @@ extension LocationService: CLLocationManagerDelegate {
             bestLocation = candidate
             updateSnapshot(with: candidate)
             reverseGeocodeIfNeeded(for: candidate)
+            DispatchQueue.main.async {
+                self.isRefreshing = false
+            }
             return
         }
 
         if let bestLocation {
             updateSnapshot(with: bestLocation)
         }
+
+        DispatchQueue.main.async {
+            self.isRefreshing = false
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        DispatchQueue.main.async {
+            self.isRefreshing = false
+        }
+
         guard let message = userFacingLocationMessage(for: error) else {
             return
         }
