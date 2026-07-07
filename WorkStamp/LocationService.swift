@@ -121,12 +121,13 @@ final class LocationService: NSObject, ObservableObject {
             return ""
         }
 
-        let primaryParts = [
+        let primaryName = [
             placemark.areasOfInterest?.first,
             placemark.name
         ]
         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
+        .first
 
         let areaParts = [
             placemark.administrativeArea,
@@ -143,14 +144,13 @@ final class LocationService: NSObject, ObservableObject {
         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
 
-        if let firstPrimary = primaryParts.first {
-            let suffix = (areaParts + roadParts)
-                .filter { !$0.contains(firstPrimary) }
-                .joined()
-            return suffix.isEmpty ? firstPrimary : "\(suffix)·\(firstPrimary)"
+        let address = (areaParts + roadParts).joined()
+
+        if let primaryName, !primaryName.isEmpty {
+            return composePreferredAddress(primaryName: primaryName, detailAddress: address)
         }
 
-        return (areaParts + roadParts).joined()
+        return address
     }
 
     private func formattedAddress(from mapItem: MKMapItem?) -> String {
@@ -173,11 +173,7 @@ final class LocationService: NSObject, ObservableObject {
             return ""
         }
 
-        if let preferredAddress, !preferredAddress.contains(primaryName) {
-            return "\(primaryName)·\(preferredAddress)"
-        }
-
-        return primaryName
+        return composePreferredAddress(primaryName: primaryName, detailAddress: preferredAddress)
     }
 
     private func enrichAddressWithMapKit(for location: CLLocation, fallbackAddress: String?) {
@@ -466,17 +462,45 @@ final class LocationService: NSObject, ObservableObject {
         let trimmedFallback = fallbackAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPOIAddress = poiAddress.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if let trimmedFallback,
-           !trimmedFallback.isEmpty,
-           !trimmedFallback.contains(poiName) {
-            return "\(poiName)·\(trimmedFallback)"
+        if let trimmedFallback, !trimmedFallback.isEmpty {
+            return composePreferredAddress(primaryName: poiName, detailAddress: trimmedFallback)
         }
 
-        if !trimmedPOIAddress.isEmpty, !trimmedPOIAddress.contains(poiName) {
-            return "\(poiName)·\(trimmedPOIAddress)"
+        if !trimmedPOIAddress.isEmpty {
+            return composePreferredAddress(primaryName: poiName, detailAddress: trimmedPOIAddress)
         }
 
         return poiName
+    }
+
+    private func composePreferredAddress(primaryName: String, detailAddress: String?) -> String {
+        let trimmedPrimary = primaryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetail = detailAddress?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        guard !trimmedPrimary.isEmpty else {
+            return trimmedDetail
+        }
+
+        guard !trimmedDetail.isEmpty else {
+            return trimmedPrimary
+        }
+
+        if trimmedDetail == trimmedPrimary {
+            return trimmedPrimary
+        }
+
+        if let detailRange = trimmedDetail.range(of: trimmedPrimary) {
+            let deduplicatedDetail = trimmedDetail.replacingCharacters(in: detailRange, with: "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "·,，:： ").union(.whitespacesAndNewlines))
+
+            return deduplicatedDetail.isEmpty ? trimmedPrimary : "\(trimmedPrimary)·\(deduplicatedDetail)"
+        }
+
+        if trimmedPrimary.contains(trimmedDetail) {
+            return trimmedPrimary
+        }
+
+        return "\(trimmedPrimary)·\(trimmedDetail)"
     }
 
     private func bestMapItem(from items: [MKMapItem], anchor location: CLLocation) -> MKMapItem? {
