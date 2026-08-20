@@ -107,3 +107,13 @@ iOS：
 
 - ...
 ```
+
+## 2026-08-20 Device Test Record
+
+- 设备：已配对真机“哥谭之王”（iPhone Air）
+- Bundle ID：`com.godmiracle.WorkStamp`
+- Debug 构建：通过
+- 安装与启动：通过
+- `WorkStampTests`：16/16 通过
+- `WorkStampUITests`：1/1 通过，验证拍照页拍照/设置控件存在并可进入设置页
+- 尚未覆盖：真实相机取景与拍照、定位刷新、照片库写入和照片详情页元数据展示

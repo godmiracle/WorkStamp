@@ -48,11 +48,12 @@ enum WorkdayPrefixFormatter {
     }
 }
 
-struct LocationSnapshot {
+struct LocationSnapshot: Sendable, Equatable {
     let latitude: Double?
     let longitude: Double?
     let altitude: Double?
     let horizontalAccuracy: Double?
+    let verticalAccuracy: Double?
     let timestamp: Date?
     let address: String?
 
@@ -61,21 +62,31 @@ struct LocationSnapshot {
         longitude: nil,
         altitude: nil,
         horizontalAccuracy: nil,
+        verticalAccuracy: nil,
         timestamp: nil,
         address: nil
     )
 
-    var photoAssetLocation: CLLocation? {
-        guard let latitude, let longitude else {
+    var photoAssetMetadata: PhotoAssetLocationMetadata? {
+        guard let latitude,
+              let longitude,
+              let altitude,
+              let horizontalAccuracy,
+              let verticalAccuracy,
+              let timestamp,
+              horizontalAccuracy >= 0,
+              verticalAccuracy >= 0,
+              CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: latitude, longitude: longitude)) else {
             return nil
         }
 
-        return CLLocation(
-            coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-            altitude: altitude ?? 0,
-            horizontalAccuracy: horizontalAccuracy ?? kCLLocationAccuracyNearestTenMeters,
-            verticalAccuracy: altitude == nil ? -1 : 10,
-            timestamp: timestamp ?? Date()
+        return PhotoAssetLocationMetadata(
+            latitude: latitude,
+            longitude: longitude,
+            altitude: altitude,
+            horizontalAccuracy: horizontalAccuracy,
+            verticalAccuracy: verticalAccuracy,
+            timestamp: timestamp
         )
     }
 
@@ -160,6 +171,75 @@ struct LocationSnapshot {
         }
 
         return .searching
+    }
+}
+
+struct PhotoAssetLocationMetadata: Sendable, Equatable {
+    let latitude: Double
+    let longitude: Double
+    let altitude: Double
+    let horizontalAccuracy: Double
+    let verticalAccuracy: Double
+    let timestamp: Date
+
+    nonisolated var location: CLLocation {
+        CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+            altitude: altitude,
+            horizontalAccuracy: horizontalAccuracy,
+            verticalAccuracy: verticalAccuracy,
+            timestamp: timestamp
+        )
+    }
+}
+
+struct CaptureContext: Sendable, Equatable {
+    let captureDate: Date
+    let locationSnapshot: LocationSnapshot
+
+    var photoAssetLocation: PhotoAssetLocationMetadata? {
+        locationSnapshot.photoAssetMetadata
+    }
+}
+
+struct CaptureFlightGate: Sendable {
+    private(set) var activeID: UInt64?
+    private var nextID: UInt64 = 0
+
+    mutating func begin() -> UInt64? {
+        guard activeID == nil else {
+            return nil
+        }
+
+        nextID &+= 1
+        activeID = nextID
+        return nextID
+    }
+
+    mutating func finish(id: UInt64) -> Bool {
+        guard activeID == id else {
+            return false
+        }
+
+        activeID = nil
+        return true
+    }
+}
+
+struct RequestGeneration: Sendable {
+    private(set) var value: UInt64 = 0
+
+    mutating func next() -> UInt64 {
+        value &+= 1
+        return value
+    }
+
+    mutating func invalidate() {
+        value &+= 1
+    }
+
+    func accepts(_ token: UInt64) -> Bool {
+        token == value
     }
 }
 
@@ -287,21 +367,24 @@ extension DateFormatter {
 }
 
 extension Double {
-    var workStampCoordinateString: String {
+    nonisolated var workStampCoordinateString: String {
         String(format: "%.6f", self)
     }
 
-    var workStampAltitudeString: String {
+    nonisolated var workStampAltitudeString: String {
         String(format: "%.1f", self)
     }
 }
 
-enum AttendanceStatus {
+enum AttendanceStatus: Equatable, Sendable {
+    case beforeDuty
     case onDuty
     case offDuty
 
     var displayName: String {
         switch self {
+        case .beforeDuty:
+            return "上班前"
         case .onDuty:
             return "上班"
         case .offDuty:
@@ -328,7 +411,7 @@ enum AttendanceStatusResolver {
         }
 
         if currentMinutes < onDutyMinutes {
-            return .onDuty
+            return .beforeDuty
         }
 
         return .onDuty

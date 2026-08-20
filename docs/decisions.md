@@ -889,3 +889,25 @@ DayMark 的核心场景是现场留痕，不是导航。用户回看照片时，
 
 - 真机确认旧数据迁移后的展示是否符合预期。
 - 后续若继续扩展，可再升级成占位符模板系统，例如 `{prefix}第{day}天`。
+
+---
+
+## 2026-08-20 - Stabilize Capture Context, Location Freshness, And Workday Semantics
+
+### Decision
+
+本次稳定性修复采用明确的值类型边界和主 actor 状态管理：相机服务在服务层实现单飞与操作 ID，晚到的 AVCapture 回调被忽略；拍照先并行请求一个最长 2 秒的 fresh location，再创建不可变 CaptureContext，水印和照片元数据只从同一上下文读取。定位服务用连续请求 generation、反解析 request ID 和坐标匹配保护快照，所有一次刷新终态（成功、拒绝、错误、超时、取消、不可用）都清理 isRefreshing。无 fresh location 时使用空快照，照片不写入旧位置或合成的海拔/精度/时间。
+
+2026 年工作日表按已确认的官方安排修正：元旦 1 月 1-3 日、春节 2 月 15-23 日、劳动节 5 月 1-5 日、中秋节 9 月 25-27 日、国庆节 10 月 1-7 日及现有清明/端午日期；调休上班日为 1 月 4 日、2 月 14/28 日、5 月 9 日、9 月 20 日、10 月 10 日。调休日期先于周末和节假日排除判断。上下班状态改为“上班前 / 上班 / 下班”三态，设置页说明同步更新。
+
+### Reason
+
+这些边界解决的是结果一致性而非 UI 防抖：重复拍照不能覆盖 continuation，旧地址不能覆盖新坐标，保存的地理元数据不能与预览水印来自不同快照，且原有下班前统一显示“上班”的文案无法表达上班前状态。
+
+### Test infrastructure
+
+应用产物保持 DayMark.app/DayMark，显式保留测试模块名 WorkStamp；Debug/Release 测试宿主均指向 DayMark，新增共享 WorkStamp scheme 并包含单元/UI 目标。Swift Testing 覆盖相机单飞门闩、定位 generation、无效/有效照片位置元数据、2026 年边界和三态上下班时间；UI 测试改为断言拍照和设置控件。
+
+### Verification boundary
+
+普通 generic app build 与 build-for-testing 已完成，未观察到 CameraService、LocationService 或 PhotoLibrarySaver 的并发警告；仍保留用户明确要求暂缓的 iOS 26 CLGeocoder 弃用提示。SWIFT_STRICT_CONCURRENCY=complete 两次尝试均在 SwiftUI 宏插件沙箱失败，无法声称严格构建通过。配置的 iPhone 17 测试在 app 启动时返回 No such process，故没有模拟器通过结论。随后在已配对的 iPhone Air 真机上完成 Debug 构建、安装、启动，`WorkStampTests` 16/16 和 `WorkStampUITests` 1/1 通过；现有 UI 测试只覆盖拍照页控件与设置入口，不替代真实相机拍照、定位刷新和 Photos 写入全链路验收。

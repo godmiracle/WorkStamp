@@ -179,7 +179,7 @@ struct SettingsView: View {
     private var attendanceCard: some View {
         settingsCard(
             title: "上下班状态",
-            subtitle: "默认 09:00 前按上班，18:00 起按下班。"
+            subtitle: "默认 09:00 前为上班前，09:00 起上班，18:00 起下班。"
         ) {
             VStack(spacing: 14) {
                 DatePicker(
@@ -201,7 +201,7 @@ struct SettingsView: View {
                     smallStatChip(title: "下班", value: DateFormatter.workStampTimeOnly.string(from: offDutyBinding.wrappedValue))
                 }
 
-                Text("当前规则：下班时间之前统一按“上班”处理，到达或晚于下班时间按“下班”处理。")
+                Text("当前规则：上班时间之前为“上班前”，到达上班时间后且早于下班时间为“上班”，到达或晚于下班时间为“下班”。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

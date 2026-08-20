@@ -10,6 +10,7 @@ import CoreLocation
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppSettingKeys.workStartTimestamp) private var workStartTimestamp = 0.0
     @AppStorage(AppSettingKeys.excludeWeekends) private var excludeWeekends = true
     @AppStorage(AppSettingKeys.excludeChinaHolidays) private var excludeChinaHolidays = false
@@ -36,6 +37,10 @@ struct ContentView: View {
     @State private var countdownValue: Int?
 
     private let holidayProvider = ChinaHolidayProvider()
+
+    private var isUITesting: Bool {
+        ProcessInfo.processInfo.arguments.contains("-ui-testing")
+    }
 
     private var watermarkPosition: WatermarkPosition {
         WatermarkPosition(rawValue: watermarkPositionRawValue) ?? .bottomLeft
@@ -116,7 +121,7 @@ struct ContentView: View {
                     qualityTint: locationQualityTint,
                     isRefreshing: locationService.isRefreshing
                 ) {
-                    locationService.refreshOneShot()
+                    refreshLocationFromUI()
                 }
                 .presentationDetents([.fraction(0.36), .medium])
                 .presentationDragIndicator(.visible)
@@ -136,11 +141,31 @@ struct ContentView: View {
             }
             .task {
                 migrateWorkdayPrefixIfNeeded()
+                guard !isUITesting else { return }
                 cameraService.start()
                 locationService.start()
             }
             .onDisappear {
                 cameraService.stop()
+                locationService.stop()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard !isUITesting else { return }
+
+                switch newPhase {
+                case .active:
+                    cameraService.start()
+                    locationService.start()
+                case .inactive, .background:
+                    cameraService.stop()
+                    locationService.stop()
+                @unknown default:
+                    break
+                }
+            }
+            .onChange(of: showSettings) { _, isPresented in
+                guard !isPresented else { return }
+                locationService.refreshAuthorizationStatus()
             }
             .alert("提示", isPresented: Binding(
                 get: { bannerMessage != nil },
@@ -224,7 +249,7 @@ struct ContentView: View {
 
     private var topControls: some View {
         HStack(spacing: 14) {
-            topToolButton(icon: "gearshape") {
+            topToolButton(icon: "gearshape", accessibilityIdentifier: "camera.settingsButton") {
                 showSettings = true
             }
 
@@ -382,6 +407,7 @@ struct ContentView: View {
                 }
                 .disabled(!canCapturePhoto)
                 .opacity(canCapturePhoto ? 1 : 0.66)
+                .accessibilityIdentifier("camera.captureButton")
 
                 Button {
                     cameraService.switchCamera()
@@ -408,7 +434,7 @@ struct ContentView: View {
                     title: "地点",
                     isHighlighted: locationService.snapshot.quality == .stable
                 ) {
-                    locationService.refreshOneShot()
+                    refreshLocationFromUI()
                     showLocationPanel = true
                 }
 
@@ -448,6 +474,7 @@ struct ContentView: View {
         icon: String,
         isHighlighted: Bool = false,
         isEnabled: Bool = true,
+        accessibilityIdentifier: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -464,6 +491,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.45)
+        .accessibilityIdentifier(accessibilityIdentifier ?? "")
     }
 
     private func cameraModePill(
@@ -703,19 +731,50 @@ struct ContentView: View {
 
         if timerMode.delaySeconds > 0 {
             for value in stride(from: timerMode.delaySeconds, through: 1, by: -1) {
+                guard !Task.isCancelled else {
+                    countdownValue = nil
+                    return
+                }
+
                 countdownValue = value
-                try? await Task.sleep(for: .seconds(1))
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    countdownValue = nil
+                    return
+                }
             }
             countdownValue = nil
         }
 
         isSavingPhoto = true
-        locationService.refreshOneShot()
         let captureDate = Date()
-        let snapshot = locationService.currentSnapshot()
+        let locationTask = Task { @MainActor in
+            await locationService.refreshOneShot()
+        }
+
+        defer {
+            locationTask.cancel()
+            countdownValue = nil
+            isSavingPhoto = false
+        }
 
         do {
             let originalImage = try await captureImage()
+            let locationResult = await locationTask.value
+            let snapshot: LocationSnapshot
+
+            switch locationResult {
+            case let .success(freshSnapshot):
+                snapshot = freshSnapshot
+            case .failure:
+                snapshot = .empty
+            }
+
+            let captureContext = CaptureContext(
+                captureDate: captureDate,
+                locationSnapshot: snapshot
+            )
 
             if workStartTimestamp == 0 {
                 workStartTimestamp = captureDate.timeIntervalSince1970
@@ -727,8 +786,8 @@ struct ContentView: View {
                 imageToSave = WatermarkRenderer.render(
                     image: originalImage,
                     payload: WatermarkRenderPayload(
-                        timestamp: captureDate,
-                        snapshot: snapshot,
+                        timestamp: captureContext.captureDate,
+                        snapshot: captureContext.locationSnapshot,
                         attendanceStatus: attendanceStatusText(for: captureDate),
                         workdayLabel: workdayLabel(for: captureDate),
                         fontSize: watermarkFontSize,
@@ -741,39 +800,53 @@ struct ContentView: View {
 
             try await saveToPhotoLibrary(
                 imageToSave,
-                captureDate: captureDate,
-                location: snapshot.photoAssetLocation
+                context: captureContext
             )
+            try Task.checkCancellation()
             recentCapturedImage = imageToSave
             bannerMessage = "带水印照片已保存到相册。"
         } catch {
-            bannerMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            if !Task.isCancelled {
+                bannerMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
         }
-
-        isSavingPhoto = false
     }
 
     private func captureImage() async throws -> UIImage {
-        try await withCheckedThrowingContinuation { continuation in
-            cameraService.capturePhoto(flashMode: flashMode) { result in
-                continuation.resume(with: result)
+        let cameraService = cameraService
+        return try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<UIImage, Error>) in
+                cameraService.capturePhoto(flashMode: flashMode) { result in
+                    continuation.resume(with: result)
+                }
             }
-        }
+        }, onCancel: {
+            Task { @MainActor in
+                cameraService.cancelCapture()
+            }
+        })
     }
 
     private func saveToPhotoLibrary(
         _ image: UIImage,
-        captureDate: Date,
-        location: CLLocation?
+        context: CaptureContext
     ) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            PhotoLibrarySaver.save(
-                image,
-                captureDate: captureDate,
-                location: location
-            ) { result in
-                continuation.resume(with: result)
+        try await PhotoLibrarySaver.save(
+            image,
+            captureDate: context.captureDate,
+            location: context.photoAssetLocation
+        )
+    }
+
+    private func refreshLocationFromUI() {
+        Task { @MainActor in
+            let result = await locationService.refreshOneShot()
+            guard case let .failure(error) = result,
+                  error != .timedOut,
+                  error != .cancelled else {
+                return
             }
+            bannerMessage = error.errorDescription
         }
     }
 }

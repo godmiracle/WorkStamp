@@ -24,7 +24,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		1581174C2FF50CEA00FF289E /* WorkStamp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WorkStamp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1581174C2FF50CEA00FF289E /* DayMark.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DayMark.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		158117592FF50CEF00FF289E /* WorkStampTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WorkStampTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		158117632FF50CEF00FF289E /* WorkStampUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WorkStampUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -79,7 +79,7 @@
 		1581174D2FF50CEA00FF289E /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1581174C2FF50CEA00FF289E /* WorkStamp.app */,
+				1581174C2FF50CEA00FF289E /* DayMark.app */,
 				158117592FF50CEF00FF289E /* WorkStampTests.xctest */,
 				158117632FF50CEF00FF289E /* WorkStampUITests.xctest */,
 			);
@@ -104,7 +104,7 @@
 			);
 			name = WorkStamp;
 			productName = WorkStamp;
-			productReference = 1581174C2FF50CEA00FF289E /* WorkStamp.app */;
+			productReference = 1581174C2FF50CEA00FF289E /* DayMark.app */;
 			productType = "com.apple.product-type.application";
 		};
 		158117582FF50CEF00FF289E /* WorkStampTests */ = {
@@ -389,6 +389,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.godmiracle.WorkStamp;
+				PRODUCT_MODULE_NAME = WorkStamp;
 				PRODUCT_NAME = DayMark;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -425,6 +426,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.godmiracle.WorkStamp;
+				PRODUCT_MODULE_NAME = WorkStamp;
 				PRODUCT_NAME = DayMark;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -454,7 +456,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WorkStamp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WorkStamp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DayMark.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DayMark";
 			};
 			name = Debug;
 		};
@@ -476,7 +478,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WorkStamp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WorkStamp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DayMark.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DayMark";
 			};
 			name = Release;
 		};

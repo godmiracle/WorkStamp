@@ -48,7 +48,7 @@ struct ChinaHolidayProvider: ChinaHolidayProviding {
         ChinaHolidaySchedule(
             holidayDates: makeDates(
                 [
-                    (1, 1),
+                    (1, 1), (1, 2), (1, 3),
                     (2, 15), (2, 16), (2, 17), (2, 18), (2, 19), (2, 20), (2, 21), (2, 22), (2, 23),
                     (4, 4), (4, 5), (4, 6),
                     (5, 1), (5, 2), (5, 3), (5, 4), (5, 5),
@@ -61,9 +61,10 @@ struct ChinaHolidayProvider: ChinaHolidayProviding {
             ),
             adjustedWorkdays: makeDates(
                 [
-                    (2, 28),
-                    (4, 26),
-                    (9, 27),
+                    (1, 4),
+                    (2, 14), (2, 28),
+                    (5, 9),
+                    (9, 20),
                     (10, 10)
                 ],
                 year: 2026,
@@ -147,8 +148,7 @@ enum WorkdayCalculator {
         calendar: Calendar,
         holidayProvider: ChinaHolidayProviding
     ) -> Bool {
-        if options.excludeChinaHolidays,
-           holidayProvider.supportsHolidayExclusion,
+        if holidayProvider.supportsHolidayExclusion,
            holidayProvider.isAdjustedWorkday(date, calendar: calendar) {
             return true
         }
