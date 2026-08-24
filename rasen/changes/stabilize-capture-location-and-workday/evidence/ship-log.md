@@ -1,11 +1,11 @@
 # Ship Log: stabilize-capture-location-and-workday
 
-**Date:** 2026-08-20 13:42:13 +0800
-**Mode:** local
+**Date:** 2026-08-24 09:33:11 +0800
+**Mode:** push
 **Branch:** main
-**Commit:** 0235f1c5a49ef8db948e08625f9f6718029d3a6d
-**Tree:** 8cda46d081c926d17bc41f9ad8ee305d315e07a7
-**Status:** Committed (delivery deferred to portfolio level)
+**Commit:** 7fdf5fcacd9d13b6e5669c388785bc4bfc9f9edf
+**Tree:** 8a13f4ae6e51f0424e65066c407603bd00e0082e
+**Status:** Pushed
 
 ## Pre-Flight Results
 
@@ -16,7 +16,7 @@
 
 ## Test Gate
 
-- Required scope: `git diff --check`, current-worktree iPhone build/install/launch, and the configured on-device unit/UI test targets. The scope is broad enough for the camera/location/Photos concurrency changes, workday rules, and test-host/scheme configuration; a full repository suite was not inferred.
+- Required scope: `git diff --check`, current-worktree iPhone build/install/launch, version metadata inspection, and the configured unit test target. The scope is broad enough for the camera/location/Photos concurrency changes, workday rules, version UI, and test-host/scheme configuration; a full repository suite was not inferred.
 - Rationale: the change crosses camera, location, Photos, SwiftUI capture flow, business-rule calculation, and Xcode test configuration. The connected-device test command exercised the current app and both configured test targets.
 - `git diff --check`: exit 0.
 - `xcodebuild -project WorkStamp.xcodeproj -scheme WorkStamp -configuration Debug -destination id=A67DE9B5-C985-51C3-83BE-FBC006C114A4 -derivedDataPath /tmp/WorkStampDeviceDerivedData build`: exit 0.
@@ -27,11 +27,19 @@
 - Device: paired physical device `哥谭之王` (iPhone Air), ID `A67DE9B5-C985-51C3-83BE-FBC006C114A4`.
 - Strict-concurrency command: `SWIFT_STRICT_CONCURRENCY=complete /Applications/Xcode-beta.app/Contents/Developer/usr/bin/xcodebuild -project WorkStamp.xcodeproj -scheme WorkStamp -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/WorkStampStrictReviewData build`: exit 65 at SwiftUI macro sandbox/plugin errors; this is the recorded reason task 2.4 remains incomplete.
 - Supplementary `xcresulttool get test-results summary` readback was blocked by an Xcode 27 permission error while creating a temporary `TestReport` file; it does not override the successful `xcodebuild` result and test counts above.
-- Tree: `8cda46d081c926d17bc41f9ad8ee305d315e07a7`.
+- Current follow-up Debug iPhoneOS build: exit 0; generated bundle metadata `CFBundleShortVersionString=1.0`, `CFBundleVersion=3`.
+- Current follow-up `devicectl device install app` and `device process launch`: succeeded on `哥谭之王` (iPhone Air); user confirmed the Settings version display is normal.
+- Current follow-up `WorkStampTests` execution: interrupted before tests because Xcode reported the physical device was locked; the app and test bundles compiled successfully.
+- Simulator fallback: blocked by CoreSimulatorService connection refusal while booting the available iOS 27.0 runtime.
+- Tree: `8a13f4ae6e51f0424e65066c407603bd00e0082e`.
 
 ## Delivery
 
-- Local commit created; no push, PR, merge, or remote write was performed.
+- Commit `7fdf5fc` created and pushed directly to `main` via the verified GitHub SSH endpoint; no PR or merge was used.
 - Before commit, the working tree contained only the named implementation/docs/Rasen change files plus intentionally untracked `.codex/`, `.rasen/`, and `rasen/config.yaml`.
-- The commit contains 26 explicitly staged files. The empty `handoff/` directory had no files to stage.
-- After the code commit, `main` is ahead of `origin/main` by 1 commit. The process-only `.codex/`, `.rasen/`, and `rasen/config.yaml` remain untracked and untouched.
+- The code commit contains 14 explicitly staged files; this ship-log update is recorded separately.
+- The process-only `.codex/`, `.rasen/`, and `rasen/config.yaml` remain untracked and untouched.
+
+## Previous Delivery
+
+- `0235f1c5a49ef8db948e08625f9f6718029d3a6d` was previously recorded as a local delivery on 2026-08-20; this entry supersedes its delivery status after the follow-up commit was pushed.
