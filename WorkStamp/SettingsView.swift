@@ -71,6 +71,7 @@ struct SettingsView: View {
                         attendanceCard
                         watermarkCard
                         holidayNoteCard
+                        versionCard
 #if DEBUG
                         deviceNoteCard
 #endif
@@ -270,6 +271,23 @@ struct SettingsView: View {
         }
     }
 
+    private var versionCard: some View {
+        settingsCard(
+            title: "关于版本",
+            subtitle: "用于核对当前手机上的安装包是否为最新代码。"
+        ) {
+            VStack(spacing: 10) {
+                versionInfoRow(title: "应用版本", value: AppVersionInfo.displayValue)
+                versionInfoRow(title: "构建渠道", value: AppVersionInfo.channelName)
+
+                Text("代码更新后请同步递增构建号，便于和手机上的安装包核对。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
     private var deviceNoteCard: some View {
         settingsCard(
             title: "真机测试提示",
@@ -324,6 +342,22 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func versionInfoRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+
+            Spacer()
+
+            Text(value)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
         .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 

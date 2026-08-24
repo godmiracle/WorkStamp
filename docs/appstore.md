@@ -188,7 +188,7 @@ DayMark（印记相机）专注于一件事：让现场照片记录更可信、�
 ## Metadata Snapshot
 
 - Marketing Version: `1.0`
-- Build: `2`
+- Build: `3`
 - Display Name: `印记相机`
 - Product Name: `DayMark`
 - Bundle Identifier: `com.godmiracle.WorkStamp`

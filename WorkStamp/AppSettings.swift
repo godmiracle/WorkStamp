@@ -6,7 +6,37 @@
 //
 
 import CoreLocation
+import Foundation
 import SwiftUI
+
+enum AppVersionInfo {
+    static var marketingVersion: String {
+        value(for: "CFBundleShortVersionString")
+    }
+
+    static var buildNumber: String {
+        value(for: "CFBundleVersion")
+    }
+
+    static var displayValue: String {
+        "\(marketingVersion) (\(buildNumber))"
+    }
+
+#if DEBUG
+    static let channelName = "Debug"
+#else
+    static let channelName = "Release"
+#endif
+
+    private static func value(for key: String) -> String {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+              !value.isEmpty else {
+            return "未知"
+        }
+
+        return value
+    }
+}
 
 enum AppSettingKeys {
     static let workStartTimestamp = "workStartTimestamp"
@@ -49,6 +79,9 @@ enum WorkdayPrefixFormatter {
 }
 
 struct LocationSnapshot: Sendable, Equatable {
+    private static let captureFallbackMaximumAge: TimeInterval = 45
+    private static let captureFallbackMaximumHorizontalAccuracy = 120.0
+
     let latitude: Double?
     let longitude: Double?
     let altitude: Double?
@@ -171,6 +204,54 @@ struct LocationSnapshot: Sendable, Equatable {
         }
 
         return .searching
+    }
+
+    func canBeUsedAsCaptureFallback(at referenceDate: Date) -> Bool {
+        guard hasCoordinates,
+              let horizontalAccuracy,
+              let timestamp,
+              horizontalAccuracy > 0,
+              horizontalAccuracy <= Self.captureFallbackMaximumHorizontalAccuracy else {
+            return false
+        }
+
+        let age = referenceDate.timeIntervalSince(timestamp)
+        return age >= 0 && age <= Self.captureFallbackMaximumAge
+    }
+
+    func withRecentAddress(from candidate: LocationSnapshot, at referenceDate: Date) -> LocationSnapshot {
+        guard address == nil,
+              let candidateAddress = candidate.address,
+              !candidateAddress.isEmpty,
+              candidate.canBeUsedAsCaptureFallback(at: referenceDate),
+              let latitude,
+              let longitude,
+              let candidateLatitude = candidate.latitude,
+              let candidateLongitude = candidate.longitude else {
+            return self
+        }
+
+        let distance = CLLocation(
+            latitude: latitude,
+            longitude: longitude
+        ).distance(from: CLLocation(
+            latitude: candidateLatitude,
+            longitude: candidateLongitude
+        ))
+
+        guard distance <= 100 else {
+            return self
+        }
+
+        return LocationSnapshot(
+            latitude: latitude,
+            longitude: longitude,
+            altitude: altitude,
+            horizontalAccuracy: horizontalAccuracy,
+            verticalAccuracy: verticalAccuracy,
+            timestamp: timestamp,
+            address: candidateAddress
+        )
     }
 }
 

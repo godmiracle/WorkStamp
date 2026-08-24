@@ -911,3 +911,36 @@ DayMark 的核心场景是现场留痕，不是导航。用户回看照片时，
 ### Verification boundary
 
 普通 generic app build 与 build-for-testing 已完成，未观察到 CameraService、LocationService 或 PhotoLibrarySaver 的并发警告；仍保留用户明确要求暂缓的 iOS 26 CLGeocoder 弃用提示。SWIFT_STRICT_CONCURRENCY=complete 两次尝试均在 SwiftUI 宏插件沙箱失败，无法声称严格构建通过。配置的 iPhone 17 测试在 app 启动时返回 No such process，故没有模拟器通过结论。随后在已配对的 iPhone Air 真机上完成 Debug 构建、安装、启动，`WorkStampTests` 16/16 和 `WorkStampUITests` 1/1 通过；现有 UI 测试只覆盖拍照页控件与设置入口，不替代真实相机拍照、定位刷新和 Photos 写入全链路验收。
+
+### Follow-up fix
+
+真机反馈显示预览有定位，但成片的经纬度、地址和海拔同时变成不可用。原因是拍照时的一次性定位在超时/忙碌/失败后，旧逻辑无条件使用空快照，覆盖了预览中仍有效的缓存定位。修复后在拍照开始时冻结缓存快照：一次性定位失败时，仅当缓存坐标仍在 45 秒内时复用，过期快照才继续降级为空；不为缺失海拔、精度或时间合成伪值。
+
+修复后的 iPhoneOS Debug build 通过，模拟器 `WorkStampTests` 18/18 通过；真机重装和实拍复验待 CoreDevice 恢复 trusted connectivity 后完成。
+
+### Address resolution follow-up
+
+后续真机成片显示经纬度和海拔正常，但地址仍退化为“当前位置附近（经纬度）”。复核确认不是地址格式化本身，而是拍照上下文早于异步逆地理编码完成；因此新增拍照专用定位刷新，在地址解析完成前最多等待 4 秒，并在同一位置复用近期已解析地址。修复版已重新安装到 iPhone Air，用户实拍确认具体地址显示正常。
+## 2026-08-24 - Expose App Version In Settings
+
+### Decision
+
+在设置页增加“关于版本”卡片，显示 `CFBundleShortVersionString`、`CFBundleVersion` 以及 Debug / Release 构建渠道；本次功能构建号从 `2` 提升为 `3`。
+
+### Reason
+
+后续需要通过手机上的安装包判断是否已经包含最新代码。版本号和构建号由 Bundle 统一提供，避免在设置页重复维护一套易过期的文本。
+
+### Alternatives Considered
+
+- 只显示应用版本号：无法区分同一 `1.0` 版本下的不同安装包。
+- 在页面中硬编码代码提交哈希：容易与实际构建内容不一致，且需要额外的构建注入流程。
+
+### Impact
+
+- 设置页可以直接看到 `1.0 (3)` 和构建渠道。
+- 后续代码更新需要同步递增 `CURRENT_PROJECT_VERSION`，再通过设置页核对安装包。
+
+### Follow-up
+
+- iPhone Air 真机 Debug 包 `1.0 (3)` 已完成构建、安装和启动，用户确认设置页版本号显示正常；Release 渠道仍按发布构建时复核。

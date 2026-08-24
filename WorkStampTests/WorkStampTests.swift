@@ -249,6 +249,80 @@ struct WorkStampTests {
         #expect(!generation.accepts(second))
     }
 
+    @Test func failedFreshLocationUsesRecentCachedSnapshot() async throws {
+        let captureDate = date(2026, 8, 20, 14, 20)
+        let cachedSnapshot = LocationSnapshot(
+            latitude: 31.2304,
+            longitude: 121.4737,
+            altitude: 8.5,
+            horizontalAccuracy: 50,
+            verticalAccuracy: 18,
+            timestamp: captureDate.addingTimeInterval(-20),
+            address: "测试地点"
+        )
+
+        let resolved = CaptureLocationResolver.resolve(
+            result: .failure(.timedOut),
+            cachedSnapshot: cachedSnapshot,
+            referenceDate: captureDate
+        )
+
+        #expect(resolved == cachedSnapshot)
+    }
+
+    @Test func staleCachedSnapshotDoesNotBecomeCaptureMetadata() async throws {
+        let captureDate = date(2026, 8, 20, 14, 20)
+        let staleSnapshot = LocationSnapshot(
+            latitude: 31.2304,
+            longitude: 121.4737,
+            altitude: 8.5,
+            horizontalAccuracy: 50,
+            verticalAccuracy: 18,
+            timestamp: captureDate.addingTimeInterval(-46),
+            address: "过期地点"
+        )
+
+        let resolved = CaptureLocationResolver.resolve(
+            result: .failure(.timedOut),
+            cachedSnapshot: staleSnapshot,
+            referenceDate: captureDate
+        )
+
+        #expect(resolved == .empty)
+    }
+
+    @Test func successfulFreshLocationKeepsRecentCachedAddress() async throws {
+        let captureDate = date(2026, 8, 20, 14, 20)
+        let cachedSnapshot = LocationSnapshot(
+            latitude: 31.2304,
+            longitude: 121.4737,
+            altitude: 8.5,
+            horizontalAccuracy: 50,
+            verticalAccuracy: 18,
+            timestamp: captureDate.addingTimeInterval(-20),
+            address: "测试地点"
+        )
+        let freshSnapshot = LocationSnapshot(
+            latitude: 31.23045,
+            longitude: 121.47372,
+            altitude: 8.6,
+            horizontalAccuracy: 12,
+            verticalAccuracy: 10,
+            timestamp: captureDate,
+            address: nil
+        )
+
+        let resolved = CaptureLocationResolver.resolve(
+            result: .success(freshSnapshot),
+            cachedSnapshot: cachedSnapshot,
+            referenceDate: captureDate
+        )
+
+        #expect(resolved.address == "测试地点")
+        #expect(resolved.latitude == freshSnapshot.latitude)
+        #expect(resolved.horizontalAccuracy == freshSnapshot.horizontalAccuracy)
+    }
+
     @Test func unavailableLocationDoesNotCreatePhotoMetadata() async throws {
         #expect(LocationSnapshot.empty.photoAssetMetadata == nil)
 
@@ -301,12 +375,20 @@ struct WorkStampTests {
         gate.resolve(.success(42))
     }
 
-    private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {
+    private func date(
+        _ year: Int,
+        _ month: Int,
+        _ day: Int,
+        _ hour: Int = 0,
+        _ minute: Int = 0
+    ) -> Date {
         var components = DateComponents()
         components.calendar = Calendar(identifier: .gregorian)
         components.year = year
         components.month = month
         components.day = day
+        components.hour = hour
+        components.minute = minute
         return components.date ?? Date.distantPast
     }
 

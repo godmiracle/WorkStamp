@@ -749,8 +749,9 @@ struct ContentView: View {
 
         isSavingPhoto = true
         let captureDate = Date()
+        let cachedSnapshot = locationService.snapshot
         let locationTask = Task { @MainActor in
-            await locationService.refreshOneShot()
+            await locationService.refreshOneShotForCapture()
         }
 
         defer {
@@ -762,14 +763,11 @@ struct ContentView: View {
         do {
             let originalImage = try await captureImage()
             let locationResult = await locationTask.value
-            let snapshot: LocationSnapshot
-
-            switch locationResult {
-            case let .success(freshSnapshot):
-                snapshot = freshSnapshot
-            case .failure:
-                snapshot = .empty
-            }
+            let snapshot = CaptureLocationResolver.resolve(
+                result: locationResult,
+                cachedSnapshot: cachedSnapshot,
+                referenceDate: captureDate
+            )
 
             let captureContext = CaptureContext(
                 captureDate: captureDate,

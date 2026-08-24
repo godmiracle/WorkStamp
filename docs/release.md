@@ -6,7 +6,7 @@
 
 | Version | Build | Date | Status | Notes |
 |---|---|---|---|---|
-| 1.0 | 2 | TBD | Draft | 当前开发中版本，对应印记相机 / DayMark 第一阶段真机版本 |
+| 1.0 | 3 | 2026-08-24 | Draft | 新增设置页版本信息，用于核对安装包是否为最新代码 |
 
 ## Pre-Release Checklist
 
@@ -64,7 +64,7 @@
 ## Current Project Snapshot
 
 - Marketing Version: `1.0`
-- Build: `2`
+- Build: `3`
 - Display Name: `印记相机`
 - Product Name: `DayMark`
 - Bundle Identifier: `com.godmiracle.WorkStamp`

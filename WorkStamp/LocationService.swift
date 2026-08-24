@@ -42,6 +42,23 @@ enum LocationRefreshResult: Sendable, Equatable {
     case failure(LocationRefreshError)
 }
 
+enum CaptureLocationResolver {
+    static func resolve(
+        result: LocationRefreshResult,
+        cachedSnapshot: LocationSnapshot,
+        referenceDate: Date
+    ) -> LocationSnapshot {
+        switch result {
+        case let .success(snapshot):
+            return snapshot.withRecentAddress(from: cachedSnapshot, at: referenceDate)
+        case .failure:
+            return cachedSnapshot.canBeUsedAsCaptureFallback(at: referenceDate)
+                ? cachedSnapshot
+                : .empty
+        }
+    }
+}
+
 private struct LocationValue: Sendable, Equatable {
     let latitude: Double
     let longitude: Double
@@ -171,6 +188,44 @@ final class LocationService: NSObject, ObservableObject {
                 self?.cancelOneShotRefresh()
             }
         })
+    }
+
+    func refreshOneShotForCapture(
+        locationTimeout: Duration = .seconds(2),
+        addressTimeout: TimeInterval = 4
+    ) async -> LocationRefreshResult {
+        let result = await refreshOneShot(timeout: locationTimeout)
+        guard case .success = result else {
+            return result
+        }
+
+        ensureAddressResolutionForCapture()
+        await waitForAddressResolution(timeout: addressTimeout)
+        return .success(snapshot)
+    }
+
+    private func ensureAddressResolutionForCapture() {
+        guard snapshot.address == nil,
+              let bestLocation,
+              snapshotMatches(bestLocation) else {
+            return
+        }
+
+        if !isGeocoding {
+            reverseGeocodeIfNeeded(for: bestLocation)
+        }
+    }
+
+    private func waitForAddressResolution(timeout: TimeInterval) async {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while isGeocoding && Date() < deadline {
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return
+            }
+        }
     }
 
     private func beginOneShotRefresh(

@@ -8,7 +8,7 @@ DayMark（印记相机）当前以 iPhone 真机作为核心验收环境。本�
 - Display Name: `印记相机`
 - Bundle Identifier: `com.godmiracle.WorkStamp`
 - Current Marketing Version: `1.0`
-- Current Build: `2`
+- Current Build: `3`
 
 ## Core Verification Areas
 
@@ -117,3 +117,20 @@ iOS：
 - `WorkStampTests`：16/16 通过
 - `WorkStampUITests`：1/1 通过，验证拍照页拍照/设置控件存在并可进入设置页
 - 尚未覆盖：真实相机取景与拍照、定位刷新、照片库写入和照片详情页元数据展示
+
+## 2026-08-20 Location Fallback Regression
+
+- 现象：预览水印有定位信息，成片的经纬度、地址和海拔全部显示不可用。
+- 根因：拍照时一次性定位失败后，旧逻辑无条件使用空 `LocationSnapshot`，覆盖预览中的有效缓存。
+- 修复：冻结拍照开始时的缓存快照；一次性定位失败时复用 45 秒内的缓存坐标，过期才降级为空。
+- 回归测试：`WorkStampTests` 18/18（模拟器）通过，iPhoneOS Debug build 通过。
+- 后续修复：拍照定位成功后等待逆地理编码完成，并在同一位置保留近期已解析地址，避免成片在地址回调到达前写入坐标兜底。
+- 真机复验：修复包已重新安装并启动；用户确认实拍成片地址显示正常。
+
+## 2026-08-20 Address Resolution Capture Fix
+
+- 现象：经纬度和海拔已正常，但成片地址显示为 `当前位置附近（经纬度）`，没有具体地点或道路。
+- 根因：一次性定位在拿到坐标后立即返回，逆地理编码仍在异步执行，拍照上下文读取到了“有坐标、无地址”的中间快照。
+- 修复：新增拍照专用定位刷新，在地址解析链路完成前最多等待 4 秒；同一位置已有新鲜地址时保留该地址。
+- 验证：iPhoneOS Debug 构建、真机安装与启动通过；用户确认真机实拍地址显示正常。
+- 备注：模拟器本轮测试受到 CoreSimulator/SwiftUI 宏服务故障影响，未作为真机验收替代。
