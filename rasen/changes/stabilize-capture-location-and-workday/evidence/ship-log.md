@@ -1,10 +1,10 @@
 # Ship Log: stabilize-capture-location-and-workday
 
-**Date:** 2026-08-24 09:33:11 +0800
+**Date:** 2026-08-27 14:12:41 +0800
 **Mode:** push
 **Branch:** main
-**Commit:** 7fdf5fcacd9d13b6e5669c388785bc4bfc9f9edf
-**Tree:** 8a13f4ae6e51f0424e65066c407603bd00e0082e
+**Commit:** 07a17f939e670335abd022602f23b8db33064d69
+**Tree:** 137f5491506c96562115e7e11a4175103edb3ed6
 **Status:** Pushed
 
 ## Pre-Flight Results
@@ -43,3 +43,11 @@
 ## Previous Delivery
 
 - `0235f1c5a49ef8db948e08625f9f6718029d3a6d` was previously recorded as a local delivery on 2026-08-20; this entry supersedes its delivery status after the follow-up commit was pushed.
+
+## Follow-up Delivery
+
+- Commit `07a17f9` was committed on `main` and pushed successfully to `git@github.com:godmiracle/WorkStamp.git` after the HTTPS credential helper rejected username input.
+- The delivered version is `1.0.1 (4)`; the generated `DayMark.app` metadata was independently checked as `CFBundleShortVersionString=1.0.1` and `CFBundleVersion=4`.
+- The final versioned build was installed to the paired iPhone Air with `devicectl`; database sequence number `4060`; process launch succeeded.
+- The build gate was `xcodebuild ... -destination 'generic/platform=iOS' ... build`: `BUILD SUCCEEDED`; `git diff --check` passed.
+- The visible location diagnostic UI was removed while the real refresh/address-resolution chain, internal diagnostics, and regression tests were retained.
