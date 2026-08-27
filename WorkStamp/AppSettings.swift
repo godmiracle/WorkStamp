@@ -78,9 +78,90 @@ enum WorkdayPrefixFormatter {
     }
 }
 
+enum LocationAddressSource: String, Sendable, Equatable {
+    case coreGeocoder
+    case mapKit
+    case nearbyPOI
+    case regionalPOI
+    case areaFallback
+    case cached
+
+    var displayName: String {
+        switch self {
+        case .coreGeocoder:
+            return "系统地址"
+        case .mapKit:
+            return "地图地址"
+        case .nearbyPOI:
+            return "附近地点"
+        case .regionalPOI:
+            return "区域地点"
+        case .areaFallback:
+            return "区域兜底"
+        case .cached:
+            return "近期缓存"
+        }
+    }
+}
+
+enum LocationQualityPolicy {
+    nonisolated static let captureMaximumAge: TimeInterval = 45
+    nonisolated static let captureMaximumHorizontalAccuracy: CLLocationDistance = 120
+    nonisolated static let trustedPOIBaseDistance: CLLocationDistance = 50
+    nonisolated static let trustedPOIMaximumDistance: CLLocationDistance = 120
+    nonisolated static let regionalPOIBaseDistance: CLLocationDistance = 180
+    nonisolated static let regionalPOIMaximumDistance: CLLocationDistance = 360
+    nonisolated static let cachedAreaMaximumDistance: CLLocationDistance = 100
+    nonisolated static let relocationMinimumDistance: CLLocationDistance = 150
+    nonisolated static let explicitRefreshMinimumDistance: CLLocationDistance = 50
+
+    nonisolated static func trustedPOIMaximumDistance(for horizontalAccuracy: CLLocationDistance) -> CLLocationDistance {
+        guard horizontalAccuracy > 0 else {
+            return trustedPOIBaseDistance
+        }
+
+        return min(
+            max(horizontalAccuracy, trustedPOIBaseDistance),
+            trustedPOIMaximumDistance
+        )
+    }
+
+    nonisolated static func acceptsTrustedPOI(
+        distance: CLLocationDistance,
+        horizontalAccuracy: CLLocationDistance
+    ) -> Bool {
+        distance <= trustedPOIMaximumDistance(for: horizontalAccuracy)
+    }
+
+    nonisolated static func acceptsCachedArea(distance: CLLocationDistance) -> Bool {
+        distance <= cachedAreaMaximumDistance
+    }
+
+    nonisolated static func isSignificantRelocation(
+        distance: CLLocationDistance,
+        currentHorizontalAccuracy: CLLocationDistance,
+        candidateHorizontalAccuracy: CLLocationDistance
+    ) -> Bool {
+        distance > max(
+            relocationMinimumDistance,
+            currentHorizontalAccuracy + candidateHorizontalAccuracy
+        )
+    }
+
+    nonisolated static func regionalPOIMaximumDistance(
+        for horizontalAccuracy: CLLocationDistance
+    ) -> CLLocationDistance {
+        // A regional POI may be represented by an entrance or centroid farther
+        // away than the fused coordinate, but it must remain bounded by both
+        // the minimum venue radius and a hard upper limit.
+        min(
+            max(horizontalAccuracy * 2, regionalPOIBaseDistance),
+            regionalPOIMaximumDistance
+        )
+    }
+}
+
 struct LocationSnapshot: Sendable, Equatable {
-    private static let captureFallbackMaximumAge: TimeInterval = 45
-    private static let captureFallbackMaximumHorizontalAccuracy = 120.0
 
     let latitude: Double?
     let longitude: Double?
@@ -89,6 +170,30 @@ struct LocationSnapshot: Sendable, Equatable {
     let verticalAccuracy: Double?
     let timestamp: Date?
     let address: String?
+    let addressSource: LocationAddressSource?
+    let addressDistance: CLLocationDistance?
+
+    init(
+        latitude: Double?,
+        longitude: Double?,
+        altitude: Double?,
+        horizontalAccuracy: Double?,
+        verticalAccuracy: Double?,
+        timestamp: Date?,
+        address: String?,
+        addressSource: LocationAddressSource? = nil,
+        addressDistance: CLLocationDistance? = nil
+    ) {
+        self.latitude = latitude
+        self.longitude = longitude
+        self.altitude = altitude
+        self.horizontalAccuracy = horizontalAccuracy
+        self.verticalAccuracy = verticalAccuracy
+        self.timestamp = timestamp
+        self.address = address
+        self.addressSource = addressSource
+        self.addressDistance = addressDistance
+    }
 
     static let empty = LocationSnapshot(
         latitude: nil,
@@ -97,7 +202,9 @@ struct LocationSnapshot: Sendable, Equatable {
         horizontalAccuracy: nil,
         verticalAccuracy: nil,
         timestamp: nil,
-        address: nil
+        address: nil,
+        addressSource: nil,
+        addressDistance: nil
     )
 
     var photoAssetMetadata: PhotoAssetLocationMetadata? {
@@ -199,7 +306,8 @@ struct LocationSnapshot: Sendable, Equatable {
             return .stable
         }
 
-        if horizontalAccuracy <= 120 && age <= 45 {
+        if horizontalAccuracy <= LocationQualityPolicy.captureMaximumHorizontalAccuracy,
+           age <= LocationQualityPolicy.captureMaximumAge {
             return .approximate
         }
 
@@ -211,12 +319,12 @@ struct LocationSnapshot: Sendable, Equatable {
               let horizontalAccuracy,
               let timestamp,
               horizontalAccuracy > 0,
-              horizontalAccuracy <= Self.captureFallbackMaximumHorizontalAccuracy else {
+              horizontalAccuracy <= LocationQualityPolicy.captureMaximumHorizontalAccuracy else {
             return false
         }
 
         let age = referenceDate.timeIntervalSince(timestamp)
-        return age >= 0 && age <= Self.captureFallbackMaximumAge
+        return age >= 0 && age <= LocationQualityPolicy.captureMaximumAge
     }
 
     func withRecentAddress(from candidate: LocationSnapshot, at referenceDate: Date) -> LocationSnapshot {
@@ -239,7 +347,7 @@ struct LocationSnapshot: Sendable, Equatable {
             longitude: candidateLongitude
         ))
 
-        guard distance <= 100 else {
+        guard LocationQualityPolicy.acceptsCachedArea(distance: distance) else {
             return self
         }
 
@@ -250,7 +358,9 @@ struct LocationSnapshot: Sendable, Equatable {
             horizontalAccuracy: horizontalAccuracy,
             verticalAccuracy: verticalAccuracy,
             timestamp: timestamp,
-            address: candidateAddress
+            address: candidateAddress,
+            addressSource: .cached,
+            addressDistance: distance
         )
     }
 }

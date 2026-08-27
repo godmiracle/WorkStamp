@@ -944,3 +944,326 @@ DayMark 的核心场景是现场留痕，不是导航。用户回看照片时，
 ### Follow-up
 
 - iPhone Air 真机 Debug 包 `1.0 (3)` 已完成构建、安装和启动，用户确认设置页版本号显示正常；Release 渠道仍按发布构建时复核。
+
+## 2026-08-24 - Gate Coordinate Quality Before Address Resolution
+
+### Decision
+
+将“坐标是否可信”和“坐标能否反查出具体地址”作为两个连续阶段处理：拍照坐标必须在 45 秒内且水平精度不超过 120 米；候选坐标不能因为回调较晚或精度更差而替换当前稳定快照。地址反查只使用通过该门槛的坐标，附近 POI 还必须落在与水平精度一致的距离范围内，近期区域地址缓存的复用范围收紧到 100 米。
+
+同时保留地址来源和地点距离元数据，在地点面板显示“系统地址 / 地图地址 / 附近地点 / 区域兜底 / 近期缓存”，用于区分坐标误差与地址选择误差。
+
+### Reason
+
+如果不先限制坐标质量，逆地理编码可能只是准确地把错误坐标转换成错误地点；如果 POI 搜索半径远大于定位精度，也可能把附近地标误当成拍摄地点。先建立坐标质量门槛，才能判断后续问题属于定位源、坐标系对比还是地址服务选择。
+
+### Alternatives Considered
+
+- 直接加入 GCJ-02 / BD-09 转换：没有固定偏移证据，且会污染 Core Location 与 MapKit 使用的坐标，不采用。
+- 继续在 180-1500 米范围内优先选 POI：容易把远处园区、商场或地标写入照片，不采用。
+- 只保留地址字符串：无法从真机反馈判断地址是新反查结果、POI 还是历史缓存，不采用。
+
+### Impact
+
+- `LocationService` 的坐标候选、拍照回退、逆地理编码和 POI 选择均受同一质量策略约束。
+- 地点面板增加诊断字段，不改变照片水印的既有展示格式。
+- 精度超过 120 米且没有新鲜缓存时，拍照会明确降级为无位置，而不是写入高风险的具体地址。
+
+### Follow-up
+
+- 在真机同一固定点连续采集室外、室内和弱信号样本，记录坐标、水平精度、地址来源和地点距离。
+- 若同一点的 Core Location 坐标与外部地图仍存在稳定偏移，再单独评估坐标系转换；在此之前不做转换。
+
+## 2026-08-24 - Prefer Semantic POIs For Photo-Like Place Labels
+
+### Decision
+
+参考系统照片的结果形态，但不读取或复用照片 App 的私有 POI 数据：继续把拍摄坐标写入 Photos 资产的 `PHAsset.location`，地点名称由 MapKit 公共接口自行解析。MapKit 反查和附近 POI 检索统一进入“精确地点 / 区域地点”两级候选选择：先看地点语义和 POI 分类，再看距离；强地点名称（例如科技园、产业园、商场、写字楼、地铁站）允许在定位精度允许的区域范围内作为区域地点，普通候选不能因为更近就压过强 POI。
+
+同时，地址字段中重复出现 POI 名称不再直接过滤强地点名称，避免“上海北大科技园”这类名称被地址去重逻辑吞掉。选中的 MapKit POI 优先于系统地址回退，并在地点面板保留地址来源和候选距离，方便区分“坐标误差”和“地点选择误差”。
+
+### Reason
+
+照片 App 的内部 POI 选择策略没有公开 API，不能直接调用其数据库或内部算法；但 `MKMapItem.name`、地址表示和 `MKLocalPointsOfInterestRequest` 足以构建可解释的公共 API 近似实现。只按最近距离选地点会把道路、区域或弱语义候选误当成拍摄地点；只按 POI 名称又会接受远处地标。因此采用语义优先、距离分层和精度约束的组合。
+
+### Thresholds
+
+- 精确地点：沿用与水平精度一致的可信 POI 距离，基础 50 米，上限 120 米。
+- 区域地点：仅限强 POI 名称，距离为 `max(水平精度 × 2, 180 米)`，上限 360 米；当前拍照坐标门槛为 120 米，因此实际通常不超过 240 米。
+- 未命中候选：继续回到系统地址、区域缓存或经纬度兜底，不凭远处弱语义地点补全具体地址。
+
+### Impact
+
+- `LocationService` 的 MapKit 反查和附近 POI 搜索共用同一选择器，避免两条链路选择结果不一致。
+- 地点面板新增“区域地点”来源；照片水印仍显示地点名和详细地址，不改变 Photos 资产坐标写入路径。
+- 这是可解释的 MapKit 公共 API 近似，不承诺与照片 App 的私有 POI 文案逐字一致。
+
+### Follow-up
+
+- 真机在园区、商场、写字楼、道路和弱信号环境各采集样本，与照片详情页地点标题逐项比较。
+- 若某类地点仍明显偏差，再按真实样本调整强 POI 词表或候选评分，不直接放宽全部 POI 距离。
+
+## 2026-08-24 - Continue POI Search After Named Area Fallback
+
+### Finding
+
+真机反馈在上海北大科技园反复得到“逸景佳苑”。代码复核发现，`CLGeocoder` 先返回一个命名区域后，旧的 `shouldSearchNearbyPOI` 只在地址像门牌号或以“附近”结尾时继续检索；“逸景佳苑·高境镇”不满足这两个条件，因此附近 POI 检索被提前跳过，科技园候选没有机会参与选择。
+
+### Decision
+
+只要 MapKit 反查没有选出可信 POI，就继续执行附近 POI 搜索；只有已经选出有效 POI 时才停止搜索。附近候选仍受精确/区域分层、强语义名称和定位精度约束，不通过放宽距离来解决问题。
+
+### Verification
+
+- 新增回归测试先在真机红灯复现 `namedCoreGeocoderAreaStillSearchesNearbyPOI`。
+- 修复后真机 `28/28` 通过，0 失败、0 跳过。
+- 这确认了“命名区域地址阻断 POI 搜索”是代码缺陷；坐标是否同时偏移仍需读取修复版地点面板的经纬度、水平精度和地点距离确认。
+
+### Follow-up
+
+- 若修复后显示上海北大科技园或其他正确 POI，说明主要是地址选择链问题。
+- 若仍显示逸景佳苑，记录地点面板四项数据并在地图上核对坐标；只有坐标落点也靠近逸景佳苑时，才继续排查 Core Location、缓存或坐标源偏移。
+
+## 2026-08-24 - Promote Fresh Significant Relocations
+
+### Finding
+
+新截图显示坐标 `31.323809, 121.481399`、精度约 `±9m`、地址来源为“系统地址”。公开地图条目给出的逸景佳苑位置约为 `31.323220, 121.482398`，两点约相差 115 米，说明当前坐标确实落在逸景佳苑一带；这不是单纯的 POI 文案问题。与此同时，旧晋级策略要求新位置与旧位置精度相近，可能把移动后的较低精度新回调拒绝掉。
+
+### Decision
+
+当新定位仍满足拍照质量门槛，且与旧定位距离超过 150 米并超出新旧精度误差包络时，允许新定位替换旧定位。附近几米的低精度抖动继续按原策略拒绝。地点面板新增“定位时间”，用于区分当前回调、旧快照和系统定位源本身的错误。
+
+### Reason
+
+高精度旧点不能永久压过一个明显移动后的新点；否则用户从一个地点移动到另一个地点后，手动刷新和拍照都可能继续使用旧坐标。另一方面，不能仅凭地址文字把坐标强行修正到科技园，因此仍保留坐标质量门槛和人工地图核对。
+
+### Verification
+
+- `freshSignificantMoveCanReplaceAnOlderHighAccuracyFix` 修复前真机红灯。
+- 修复后真机 `29/29` 通过，0 失败、0 跳过。
+- 仍需用户在上海北大科技园重测并观察“定位时间”和经纬度是否同步更新。
+
+## 2026-08-24 - Diagnose Raw Core Location Before Address Resolution
+
+### Decision
+
+把原始定位回调和地址解析彻底分层：`LocationValue` 保留 Core Location 回调的坐标、海拔、水平/垂直精度、时间戳，以及 `CLLocation.sourceInformation` 能提供的模拟定位和外接设备标记；地址解析、POI 选择和地址距离只用于生成展示文本，不得回写或修正 `LocationValue` 的经纬度。
+
+地点面板新增默认展开、可折叠的“原始定位诊断”，提供大尺寸和滚动交互，同时展示最新原始回调、参与决策回调、当前已采纳原始快照、快照晋级结果，以及最新回调与快照之间的距离。
+
+### Reason
+
+用户在上海北大科技园看到逸景佳苑时，必须先确认 Core Location 回调本身落在哪里。若原始回调已经偏到逸景佳苑，继续改地址解析只是在错误坐标上换文案；若原始回调在科技园但展示仍为逸景佳苑，才属于地址/POI 选择链问题。两类问题必须通过原始坐标、时间、精度和晋级结果区分，不能靠地址反推坐标。
+
+### Source Information Boundary
+
+Apple 的 `CLLocation.sourceInformation` 只提供软件模拟和外接定位设备两个公开标记，并不承诺暴露 GPS、Wi-Fi、蜂窝网络等具体融合来源。因此“系统定位（非模拟/非外接）”只能说明没有命中这两个异常标记，不能据此断言某一种硬件来源。
+
+### Impact
+
+- 照片 `PHAsset.location` 继续使用通过候选策略采纳的原始 Core Location 坐标。
+- 诊断状态只存在于运行时，不写入照片元数据，也不改变水印坐标。
+- 以后真机复测可以按“原始回调坐标 → 晋级结果 → 地址文本”顺序定位问题。
+
+### Follow-up
+
+- 在上海北大科技园展开诊断面板，连续刷新并记录上述字段。
+- 如果原始回调坐标本身偏移，再排查系统定位环境、Wi-Fi/GNSS 可用性或设备状态；没有稳定偏移样本前不引入 GCJ-02 / BD-09 修正。
+
+## 2026-08-25 - Record Callback Sequence And Address Pipeline Separately
+
+### Finding
+
+当前真机进程冷启动后，地点面板读到首条原始样本 `31.323805, 121.481397`，最新样本仍为 `31.323805, 121.481397`；共 2 条原始样本，首末位移约 0 米，水平精度约 ±7 米。页面坐标与原始坐标一致，地址仍为逸景佳苑。
+
+### Decision
+
+`LocationDiagnostics` 增加本次运行的首条原始样本、原始样本数、首末位移，以及 `CLGeocoder` 基础地址、MapKit 反查候选和附近 POI 候选。诊断只记录和展示链路，不使用地址或 POI 反向修正 `LocationValue`、快照坐标或照片元数据。
+
+### Interpretation
+
+- 首条和最新原始样本都在 `31.3238, 121.4814` 一带，且没有明显位移，当前证据排除了“先拿到科技园坐标、再被地址解析改成逸景佳苑”的应用内时序。
+- 这仍是 Core Location 的融合落点证据，不等于已经知道该点来自 GNSS、Wi-Fi、蜂窝或室内定位；公开 `CLLocationSourceInformation` 仅能确认软件模拟和外接设备状态。
+- 首条样本时间可能早于应用面板读取时间，需按 `CLLocation.timestamp` 视作系统提供的近期/融合结果，不能把它解释成一次裸 GNSS 测量。
+
+### Verification Boundary
+
+- 命令行构建和 `build-for-testing` 通过；未打开 Xcode 图形界面。
+- 诊断包使用本机有效 iOS 开发描述文件安装到已解锁 iPhone Air，并通过 iPhone 镜像冷启动读取上述字段。
+- 最终命令行真机测试结果包 `/tmp/WorkStampRawTraceDeviceTests2/Logs/Test/Test-WorkStamp-2026.08.25_11-08-54-+0800.xcresult` 显示 `31/31` 通过、0 失败、0 跳过。
+- 最终真机面板的地址链路摘要显示“系统地址：逸景佳苑… · MapKit 候选等待中”；继续等待约 35 秒仍未出现 MapKit 候选。因此本次地址文本至少可以确认来自第一层系统地址反查，不能归因于 MapKit/附近 POI 把科技园替换成逸景佳苑。
+- MapKit 候选未返回不等于 MapKit 永久失败；本轮只记录到请求未在观察窗口内给出候选，不能据此评价地图数据库中是否存在上海北大科技园条目。
+
+## 2026-08-25 - Preserve Raw Results From Every Public Resolver
+
+### Decision
+
+在现有运行时诊断中分别保留三类公开解析器的原始结果：
+
+- `CLGeocoder`：输入坐标、所有 `CLPlacemark` 的名称、兴趣点、行政区、道路、门牌、邮编和格式化地址；
+- `MKReverseGeocodingRequest`：所有 `MKMapItem` 的名称、短/完整/单行地址、POI 分类标记、候选坐标和相对输入坐标的距离；
+- `MKLocalPointsOfInterestRequest` + `MKLocalSearch`：每次搜索半径、状态、错误、所有 POI 候选及其坐标和距离，包含扩大半径后的每一次尝试。
+
+三条链路都记录 `尚未发起 / 等待返回 / 已返回 / 无结果 / 失败` 状态。诊断只用于地点面板和测试验证，不参与坐标晋级、不用地址反向修正经纬度，也不写入照片元数据或上传服务器。
+
+### Reason
+
+只保留最终选中的地点会丢失“另一个解析器是否返回了更合适候选”的证据，无法区分解析器差异、请求未返回和候选筛选错误。保留结构化原始值后，可以在同一输入坐标下逐项比较 `CLGeocoder`、MapKit 反查和附近 POI 的真实输出。
+
+### Impact
+
+- 地点面板的“解析原始返回”区域可以直接读取三类结果及距离。
+- 附近 POI 扩半径时不会覆盖前一次响应，便于判断候选是在何种半径出现的。
+- 数据仅存在于当前 `LocationService` 运行时，保持现有本地处理和隐私边界。
+
+### Follow-up
+
+- 在上海北大科技园同一位置刷新并记录三类结果，再与 Photos 详情页地点标题逐项对照。
+- 若三类结果都指向逸景佳苑，则继续排查 Core Location 系统落点；若 MapKit/POI 返回科技园而最终仍显示逸景佳苑，再继续修正候选晋级规则。
+
+## 2026-08-27 - Complete One-Shot Refresh From A Recent Callback
+
+### Finding
+
+最新定位状态机把一次性刷新完成条件写成 `candidate.timestamp >= refreshStartedAt`。但 `CLLocation.timestamp` 是系统样本的产生时间，不是应用收到回调的时间；`requestLocation()` 返回近期缓存样本时，样本时间戳可能早于用户点击刷新，导致有效回调不结束刷新，最后被 2 秒超时吞掉。另一个问题是，候选没有超过当前快照的晋级阈值时，代码把“保留当前快照”错误当成了一次性刷新失败。
+
+### Decision
+
+- 一次性刷新只要求回调在收到时满足现有坐标质量和 45 秒新鲜度门槛，不再要求样本时间戳晚于刷新开始时间。
+- 有效候选即使没有资格替换当前快照，也以当前有效快照完成刷新；候选晋级策略与刷新完成策略分开。
+- MapKit 选出的弱语义地点（例如住宅小区）不能终止附近 POI 搜索；只有强语义地点（例如科技园、园区、商场、写字楼）才可作为地址链的终止候选。
+- MapKit 反查启动后 2 秒仍未回调时，先转入附近 POI 搜索；MapKit 后续若返回，仍通过请求 ID 和坐标匹配参与最终选择。
+- 保留请求 ID、生命周期、地址解析请求 ID 和坐标匹配保护，不放宽地址/POI 对坐标的反向修改边界。
+
+### Verification
+
+- 新增 `recentCachedCallbackBeforeRefreshStartCanCompleteOneShotRefresh` 回归测试。
+- 新增 `weakSelectedAreaStillSearchesNearbyPOI` 回归测试；iPhone Air 真机单元测试 `34/34` 通过，0 失败、0 跳过。
+- 修复包已安装到真机；本机 `devicectl` 启动因 CoreDevice/CoreSimulatorService 超时失败，尚未把该工具故障误判为应用启动或定位失败。
+- 北大科技园现场的最终地点名称和原始坐标仍需用户强制退出后重新打开 App，再手动刷新确认；若附近 POI 仍未返回目标地点，需读取诊断中的搜索状态和候选列表。
+
+## 2026-08-27 - Apple Maps 对照后强制重跑地址链
+
+### Finding
+
+用户在与截图相同的现场使用系统 Apple 地图确认地点显示为“北大科技园”。因此，不能再把 `31.323807,121.481394` 这条原始 Core Location 回调直接判定为逸景佳苑坐标；截图中的“逸景佳苑”首先是 App 当前采用的系统地址文本，MapKit/附近 POI 仍处于等待或未被重新触发的状态。
+
+### Decision
+
+- 继续保留 Core Location 原始坐标，不用 Apple 地图名称反向改写坐标，也不硬编码北大科技园坐标。
+- 手动刷新收到可用回调后，即使回调没有超过当前快照的晋级距离，也强制对当前有效坐标重新执行 `CLGeocoder → MapKit 反查 → 附近 POI`，避免旧的“逸景佳苑”地址缓存阻断新候选。
+- 手动刷新若晋级了新坐标，也强制使用同一条地址链；请求 ID、生命周期和坐标匹配保护保持不变。
+- 前台恢复时重新预热 `CLLocationManager`，并继续使用显式刷新接受较新但精度较低的有效移动样本。
+
+### Verification Boundary
+
+- 最新改动后的 iPhone Air 真机 `WorkStampTests` 为 `35/35` 通过，0 失败、0 跳过；结果包为 `/tmp/WorkStampAddressRefreshGreen2.xcresult`。
+- 最新二进制位于 `/tmp/WorkStampAddressRefreshGreen2/Build/Products/Debug-iphoneos/DayMark.app`。本轮安装重试时设备在 `devicectl` 连接阶段立即断开，不能把该构建宣称为已安装。
+- 仍需用户在北大科技园强制退出并重新打开最新构建，点击“重新定位”，确认诊断中是否出现 MapKit/附近 POI 的“北大科技园”候选；若原始坐标仍持续偏离，再单独处理系统定位落点。
+
+## 2026-08-27 - 7 月基线确认后的 POI 距离门槛回归
+
+### Finding
+
+用户已明确确认：同一设备、同一地点，7 月包显示“北大科技园”，当前包显示“逸景佳苑”。对比 7 月 `ebf09c6` 与当前代码后，定位参数仍为 `kCLLocationAccuracyBest` 和 `distanceFilter = 5`；7 月的 MapKit 候选选择没有区域距离上限，而当前新增的 `regionalPOIMaximumDistance(for:)` 会把精度 20 米的区域候选限制在 180 米内，候选即使由 Apple Maps 返回也会被丢弃。
+
+### Decision
+
+将强语义 POI 的区域候选上限恢复为本次附近搜索的最大半径 1500 米，保留“强地点优先”和坐标不回写规则。该范围只适用于 Apple Maps 已返回的强语义地点，不放宽普通地址或弱语义住宅区候选。
+
+### Verification
+
+- 修复前回归测试 `regionalPOIRequiresStrongVenueName` 在 400 米强地点候选处失败，修复后通过。
+- 最新 iPhone Air 真机 `WorkStampTests`：`35/35` 通过。
+- 最新构建已安装到 `com.godmiracle.WorkStamp`，安装数据库序号 `3920`。
+- 现场“北大科技园”最终显示仍需用户重新打开已安装构建确认；若仍不正确，下一步直接读取 MapKit/附近 POI 原始候选，不再整体回退代码。
+
+## 2026-08-27 - Nearby POI Failure Uses Bounded Named Search
+
+### Finding
+
+按用户要求直接启动真机并读取进程日志后，定位链路得到同一条稳定证据：原始 Core Location 回调为 `31.32380684,121.48139404`，水平精度约 `8–9m`，系统源标记为非模拟、非外接。`CLGeocoder` 返回逸景佳苑，`MKReverseGeocodingRequest` 返回逸景佳苑 23 号楼，候选距离约 `7.4m`，但没有 POI 分类；这些结果都不能解释为坐标被地址解析改写。
+
+真正阻断目标地点的是附近搜索：`MKLocalPointsOfInterestRequest` 即使扩大到 `600m` 仍返回 `MKErrorDomain error 5`，应用原逻辑在失败后直接结束地址链。对同一坐标执行自然语言检索 `科技园`，则返回“上海北大科技园”，候选距离约 `489.1m`。
+
+### Decision
+
+- 附近 POI 搜索失败或返回空结果，且没有已选 POI 时，针对当前地址解析请求最多追加一次有界的 `MKLocalSearch` 自然语言检索，查询词为 `科技园`，区域半径为 `1500m`。
+- 名称检索仍复用现有强语义名称、精确/区域分层和 `1500m` 距离上限；普通弱语义地点不会因为名称检索被放行。
+- 命中的 POI 使用自身地址作为详情地址，避免将“逸景佳苑”这一较弱的系统地址拼接到“上海北大科技园”后面。
+- 继续保留请求 ID、坐标匹配和生命周期保护；名称检索只生成展示地址，不回写或修正 Core Location 坐标和照片元数据。
+- 附近搜索诊断新增查询词字段，便于区分空间 POI 请求和名称兜底请求。
+
+### Verification
+
+- 最终真机日志显示：`query=科技园` 返回 `上海北大科技园`，候选为区域级地点，距离 `489.09m`。
+- 最终应用地址为 `上海北大科技园·中国上海市宝山区高逸路88号(殷高西路地铁站2号出口步行370米)`，地址来源为 `regionalPOI`；坐标仍为原始回调坐标。
+- iPhone Air 真机测试 `37` 个单元测试和 `1` 个 UI 测试全部通过。
+- 最终签名构建已安装到 `com.godmiracle.WorkStamp`，安装数据库序号为 `3980`；构建产物为 `/tmp/WorkStampNamedPOIFallbackFinal/Build/Products/Debug-iphoneos/DayMark.app`。
+
+## 2026-08-27 - Reverse Geocoding Keeps The Original CLLocation
+
+### Finding
+
+在同一台 iPhone、同一条原始回调坐标上做原始对象与重建对象的对照：原始 `CLLocation` 解析为“上海北大科技园”，把同样的标量坐标、精度和时间重建成新的 `CLLocation` 后却解析为“逸景佳苑”。因此，不能只保留经纬度等标量再重建对象交给 Apple 地址服务。
+
+### Decision
+
+- `LocationValue` 继续只负责可并发传递的坐标状态和诊断字段；同时在 `LocationService` 中保留当前最佳回调对应的原始 `CLLocation`。
+- `CLGeocoder` 和 `MKReverseGeocodingRequest` 都使用这条原始 `CLLocation`；照片坐标仍来自同一条原始回调，不接受地址结果反向改写。
+- 删除按地点名称发起的“科技园”检索兜底。附近 POI 只保留以当前坐标为中心的空间搜索，且远处区域候选继续受坐标距离门槛约束。
+
+### Impact
+
+这修复的是地址服务输入对象被改变的问题，不是对“北大科技园”做特判。任何地点都沿用同一条“原始 `CLLocation` → 坐标反解析 → 距离校验”的链路。
+
+### Verification Boundary
+
+- 原始/重建对象对照的真机探针已确认差异。
+- 最新按修复代码的 iOS Debug 构建通过；模拟器单元测试命令退出码为 0。
+- 真机随后恢复为 `available (paired)`，修复包已完成安装和冷启动日志验收；详见下方真机验证记录。
+
+## 2026-08-27 - Physical Device Verification Of The Raw CLLocation Fix
+
+### Verification
+
+- 修复构建已安装到 iPhone Air 真机 `com.godmiracle.WorkStamp`，`devicectl` 安装数据库序号为 `4028`。
+- 仅读取进程控制台日志，未读取屏幕。Core Location 原始回调为 `31.32381537030281,121.4813974768411`，水平精度约 `8.87m`，源标记为非模拟、非外接。
+- `CLGeocoder` 返回 `上海北大科技园·上海市宝山区高逸路98号`，日志来源为 `coreGeocoder`；最终地址没有被逸景佳苑覆盖。
+- MapKit 返回的门牌候选距离约 `468.87m` 且 `poi=false`，未被选用；附近 POI 请求半径 `180m` 返回 `MKErrorDomain error 5`，也未改变最终地址。
+
+### Conclusion
+
+真机结果确认当前链路是按原始坐标对应的 `CLLocation` 交给 Apple 反解析服务，并按返回结果展示；没有针对“北大科技园”的名称硬编码或名称检索兜底。
+
+## 2026-08-27 - Remove Location Diagnostic UI
+
+### Decision
+
+- 移除地点面板中的“原始定位诊断”和“解析原始返回”测试展示，包括回调统计、候选明细和解析原始字段。
+- 保留“重新定位”、定位状态、坐标、精度、时间、地址解析和原始 `CLLocation` 处理链路。
+- 保留 `LocationService` 内部诊断状态、控制台日志和回归测试，便于后续再次定位问题；这些内容不再暴露在生产地点面板中。
+
+### Verification
+
+- 清理后的 iOS Debug 真机构建通过，并安装到 `com.godmiracle.WorkStamp`，安装数据库序号为 `4036`。
+- 真机启动日志仍显示原始坐标对应的 `CLGeocoder` 地址为 `上海北大科技园·上海市宝山区高逸路98号`，证明本次只改变展示层，没有影响定位解析结果。
+
+## 2026-08-27 - Location Panel Opens At Medium Height
+
+### Decision
+
+- 地点面板使用 `.medium` 和 `.large` 两档高度，并将初始选择固定为 `.medium`。
+- 每次从相机页打开地点面板前重置为 `.medium`，确保半屏高度下地址、坐标、精度和“重新定位”按钮默认可见。
+- 保留滚动和下拉到 `.medium` 的交互，不改变定位刷新或地址解析逻辑。
+
+### Verification
+
+- iOS Debug 真机构建通过并安装到 `com.godmiracle.WorkStamp`，安装数据库序号为 `4044`；本次改为半屏默认后将重新构建验证。
+
+## 2026-08-27 - Version 1.0.1 Build 4
+
+- 本轮地点定位修复和地点面板展示调整按补丁版本处理：`MARKETING_VERSION = 1.0.1`。
+- 所有 App、单元测试和 UI 测试配置的 `CURRENT_PROJECT_VERSION` 统一递增为 `4`。
+- 重新构建后的 `DayMark.app` 已核对包内 `CFBundleShortVersionString=1.0.1`、`CFBundleVersion=4`。

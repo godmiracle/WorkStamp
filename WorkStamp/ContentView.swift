@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var showRecentCapturePreview = false
     @State private var showWatermarkPanel = false
     @State private var showLocationPanel = false
+    @State private var locationPanelDetent: PresentationDetent = .medium
     @State private var showTemplatePanel = false
     @State private var bannerMessage: String?
     @State private var isSavingPhoto = false
@@ -123,7 +124,8 @@ struct ContentView: View {
                 ) {
                     refreshLocationFromUI()
                 }
-                .presentationDetents([.fraction(0.36), .medium])
+                .presentationDetents([.medium, .large], selection: $locationPanelDetent)
+                .presentationContentInteraction(.scrolls)
                 .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showTemplatePanel) {
@@ -435,6 +437,7 @@ struct ContentView: View {
                     isHighlighted: locationService.snapshot.quality == .stable
                 ) {
                     refreshLocationFromUI()
+                    locationPanelDetent = .medium
                     showLocationPanel = true
                 }
 
@@ -897,59 +900,76 @@ private struct QuickLocationPanel: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Text("地点")
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-
-                    Spacer()
-
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(qualityTint)
-                            .frame(width: 8, height: 8)
-
-                        Text(qualityTitle)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(.secondarySystemBackground), in: Capsule())
-                }
-
-                locationRow(title: "地址", value: snapshot.detailAddressText)
-                locationRow(title: "经纬度", value: coordinateValue)
-                locationRow(title: "海拔", value: altitudeValue)
-                locationRow(title: "精度", value: accuracyValue)
-
-                Button {
-                    onRefresh()
-                } label: {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
                     HStack {
-                        if isRefreshing {
-                            ProgressView()
-                                .tint(.orange)
-                        } else {
-                            Image(systemName: "location.fill")
+                        Text("地点")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+
+                        Spacer()
+
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(qualityTint)
+                                .frame(width: 8, height: 8)
+
+                            Text(qualityTitle)
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
                         }
-
-                        Text(isRefreshing ? "定位刷新中" : "重新定位")
-                            .fontWeight(.semibold)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color(.secondarySystemBackground), in: Capsule())
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                    locationRow(title: "地址", value: snapshot.detailAddressText)
+                    locationRow(title: "经纬度", value: coordinateValue)
+                    locationRow(title: "海拔", value: altitudeValue)
+                    locationRow(title: "精度", value: accuracyValue)
+                    if let timestamp = snapshot.timestamp {
+                        locationRow(
+                            title: "定位时间",
+                            value: DateFormatter.workStampTimestamp.string(from: timestamp)
+                        )
+                    }
+                    if let addressSource = snapshot.addressSource {
+                        locationRow(title: "地址来源", value: addressSource.displayName)
+                    }
+                    if let addressDistance = snapshot.addressDistance {
+                        locationRow(
+                            title: "地点距离",
+                            value: "约 ±\(Int(addressDistance.rounded()))m"
+                        )
+                    }
+
+                    Button {
+                        onRefresh()
+                    } label: {
+                        HStack {
+                            if isRefreshing {
+                                ProgressView()
+                                    .tint(.orange)
+                            } else {
+                                Image(systemName: "location.fill")
+                            }
+
+                            Text(isRefreshing ? "定位刷新中" : "重新定位")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRefreshing)
+
+                    Text("点这里的意义，是在拍照前快速确认当前位置和定位精度，不用等拍完再去照片详情页里查。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-                .disabled(isRefreshing)
-
-                Text("点这里的意义，是在拍照前快速确认当前位置和定位精度，不用等拍完再去照片详情页里查。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                Spacer(minLength: 0)
+                .padding(20)
             }
-            .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(.systemBackground))
         }
