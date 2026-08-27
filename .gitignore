@@ -1,0 +1,11 @@
+# Local Codex / Rasen runtime state
+.codex/
+.rasen/
+/rasen/config.yaml
+
+# macOS and IDE metadata
+.DS_Store
+.idea/
+xcuserdata/
+*.xcuserstate
+DerivedData/

@@ -1267,3 +1267,13 @@ Apple 的 `CLLocation.sourceInformation` 只提供软件模拟和外接定位设
 - 本轮地点定位修复和地点面板展示调整按补丁版本处理：`MARKETING_VERSION = 1.0.1`。
 - 所有 App、单元测试和 UI 测试配置的 `CURRENT_PROJECT_VERSION` 统一递增为 `4`。
 - 重新构建后的 `DayMark.app` 已核对包内 `CFBundleShortVersionString=1.0.1`、`CFBundleVersion=4`。
+
+## 2026-08-27 - Ignore Local Tool State
+
+- 新增根目录 `.gitignore`，忽略 `.codex/`、`.rasen/`、`rasen/config.yaml` 以及 macOS、IDE 和 Xcode 本地构建状态。
+- 保留 `rasen/changes`、源码、测试和文档的可跟踪性；忽略规则不会自动移除已经被 Git 跟踪的文件。
+
+## 2026-08-27 - Stop Tracking IDE Metadata
+
+- 已使用 `git rm -r --cached .idea/` 取消 `.idea/` 下现有文件的 Git 跟踪。
+- `.idea/` 文件保留在本地，并由根目录 `.gitignore` 持续忽略；本次删除仅在提交后同步到远端。
