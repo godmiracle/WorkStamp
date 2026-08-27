@@ -51,3 +51,9 @@
 - The final versioned build was installed to the paired iPhone Air with `devicectl`; database sequence number `4060`; process launch succeeded.
 - The build gate was `xcodebuild ... -destination 'generic/platform=iOS' ... build`: `BUILD SUCCEEDED`; `git diff --check` passed.
 - The visible location diagnostic UI was removed while the real refresh/address-resolution chain, internal diagnostics, and regression tests were retained.
+
+## Repository Hygiene Follow-up
+
+- Commit `23dd5d8` added the root `.gitignore` and removed five existing `.idea/` files from Git tracking while preserving them locally.
+- The follow-up was delivered by non-force push to `origin/main`; no source or runtime behavior changed.
+- Validation: `git check-ignore` matched `.idea/`, `.codex/`, `.rasen/`, and `rasen/config.yaml`; staged and unstaged `git diff --check` both passed.
